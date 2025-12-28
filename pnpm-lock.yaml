@@ -23,6 +23,9 @@ importers:
       pg:
         specifier: ^8.11.0
         version: 8.16.3
+      pg-copy-streams:
+        specifier: ^7.0.0
+        version: 7.0.0
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -30,6 +33,28 @@ importers:
       '@types/pg':
         specifier: ^8.10.0
         version: 8.16.0
+      '@types/pg-copy-streams':
+        specifier: ^1.2.5
+        version: 1.2.5
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  packages/imu:
+    dependencies:
+      '@app/db-core':
+        specifier: workspace:*
+        version: link:../db-core
+      '@app/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+      commander:
+        specifier: ^11.0.0
+        version: 11.1.0
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.27
       typescript:
         specifier: ^5.0.0
         version: 5.9.3
@@ -49,14 +74,24 @@ packages:
   '@types/node@20.19.27':
     resolution: {integrity: sha512-N2clP5pJhB2YnZJ3PIHFk5RkygRX5WO/5f0WC08tp0wd+sv0rsJk3MqWn3CbNmT2J505a5336jaQj4ph1AdMug==}
 
+  '@types/pg-copy-streams@1.2.5':
+    resolution: {integrity: sha512-7D6/GYW2uHIaVU6S/5omI+6RZnwlZBpLQDZAH83xX1rjxAOK0f6/deKyyUTewxqts145VIGn6XWYz1YGf50G5g==}
+
   '@types/pg@8.16.0':
     resolution: {integrity: sha512-RmhMd/wD+CF8Dfo+cVIy3RR5cl8CyfXQ0tGgW6XBL8L4LM/UTEbNXYRbLwU6w+CgrKBNbrQWt4FUtTfaU5jSYQ==}
+
+  commander@11.1.0:
+    resolution: {integrity: sha512-yPVavfyCcRhmorC7rWlkHn15b4wDVgVmBA7kV4QVBsF7kv/9TKJAbAXVTxvTnwP8HHKjRCJDClKbciiYS7p0DQ==}
+    engines: {node: '>=16'}
 
   pg-cloudflare@1.2.7:
     resolution: {integrity: sha512-YgCtzMH0ptvZJslLM1ffsY4EuGaU0cx4XSdXLRFae8bPP4dS5xL1tNB3k2o/N64cHJpwU7dxKli/nZ2lUa5fLg==}
 
   pg-connection-string@2.9.1:
     resolution: {integrity: sha512-nkc6NpDcvPVpZXxrreI/FOtX3XemeLl8E0qFr6F2Lrm/I8WOnaWNhIPK2Z7OHpw7gh5XJThi6j6ppgNoaT1w4w==}
+
+  pg-copy-streams@7.0.0:
+    resolution: {integrity: sha512-zBvnY6wtaBRE2ae2xXWOOGMaNVPkXh1vhypAkNSKgMdciJeTyIQAHZaEeRAxUjs/p1El5jgzYmwG5u871Zj3dQ==}
 
   pg-int8@1.0.1:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
@@ -127,16 +162,25 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/pg-copy-streams@1.2.5':
+    dependencies:
+      '@types/node': 20.19.27
+      '@types/pg': 8.16.0
+
   '@types/pg@8.16.0':
     dependencies:
       '@types/node': 20.19.27
       pg-protocol: 1.10.3
       pg-types: 2.2.0
 
+  commander@11.1.0: {}
+
   pg-cloudflare@1.2.7:
     optional: true
 
   pg-connection-string@2.9.1: {}
+
+  pg-copy-streams@7.0.0: {}
 
   pg-int8@1.0.1: {}
 
