@@ -4,7 +4,6 @@ import { from as copyFrom } from "pg-copy-streams";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 
-// In a real app, these would come from environment variables
 const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
   port: parseInt(process.env.DB_PORT || "5432"),
