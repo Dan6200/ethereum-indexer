@@ -26,6 +26,34 @@ export const TransactionSchema = z.object({
 
 export type ValidatedTransaction = z.infer<typeof TransactionSchema>;
 
+// Define the schema for Event Logs
+export const LogSchema = z.object({
+  blockNumber: z.number().int().positive(),
+  blockHash: z.string().startsWith("0x").length(66),
+  transactionHash: z.string().startsWith("0x").length(66),
+  transactionIndex: z.number().int().nonnegative(),
+  logIndex: z.number().int().nonnegative(),
+
+  address: z.string().startsWith("0x"), // Contract Address
+  data: z.string().startsWith("0x"), // Non-indexed data
+
+  // Topics: Array of up to 4 hex strings (Topic0 is event signature)
+  topics: z.array(z.string().startsWith("0x")).max(4),
+});
+
+export type ValidatedLog = z.infer<typeof LogSchema>;
+
+// Combined Block Data (What our ingestor passes around)
+export const BlockDataSchema = z.object({
+  blockNumber: z.number(),
+  blockHash: z.string(),
+  parentHash: z.string(),
+  transactions: z.array(TransactionSchema),
+  logs: z.array(LogSchema),
+});
+
+export type BlockData = z.infer<typeof BlockDataSchema>;
+
 // Schema for the Checkpoint table
 export const CheckpointSchema = z.object({
   id: z.string(),
