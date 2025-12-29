@@ -87,6 +87,25 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
 
+  packages/indexer-daemon:
+    dependencies:
+      "@app/blockchain":
+        specifier: workspace:*
+        version: link:../blockchain
+      "@app/db-core":
+        specifier: workspace:*
+        version: link:../db-core
+      "@app/schemas":
+        specifier: workspace:*
+        version: link:../schemas
+    devDependencies:
+      "@types/node":
+        specifier: ^20.0.0
+        version: 20.19.27
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
   packages/schemas:
     dependencies:
       zod:
