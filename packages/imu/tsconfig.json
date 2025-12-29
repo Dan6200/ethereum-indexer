@@ -7,6 +7,7 @@
   "include": ["src/**/*"],
   "references": [
     { "path": "../schemas" },
-    { "path": "../db-core" }
+    { "path": "../db-core" },
+    { "path": "../blockchain" }
   ]
 }
