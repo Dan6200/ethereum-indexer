@@ -117,6 +117,14 @@ export function getClient(): PublicClient {
 }
 
 /**
+ * Fetches just the block header (lightweight) for re-org checks.
+ */
+export async function fetchBlockHeader(blockNumber: number) {
+  const client = getClient();
+  return await client.getBlock({ blockNumber: BigInt(blockNumber) });
+}
+
+/**
  * Fetches a block and all its transactions, transforming them into our schema format.
  */
 export async function fetchBlockData(
