@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS transactions_p1m_2m PARTITION OF transactions
     FOR VALUES FROM (1000000) TO (2000000);
 
 -- INDEXES
+-- Indices are automatically propagated to the partitions, so we only need to set on the parent table
 
 -- 1. BRIN Index for Block Number (Memory Efficient Range Lookups)
 -- Excellent for "Get all txs in block range X-Y"
