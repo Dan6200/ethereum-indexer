@@ -4,3 +4,4 @@ Session.vim
 dist/
 *.tsbuildinfo
 .env
+dist
