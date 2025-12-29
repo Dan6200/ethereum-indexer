@@ -94,7 +94,7 @@ export async function insertBatch(data: ValidatedTransaction[]): Promise<void> {
     }
 
     if (maxBlockNum !== -1 && maxBlockHash) {
-      await updateCheckpoint(client, maxBlockNum, maxBlockHash);
+      await saveCheckpoint(client, maxBlockNum, maxBlockHash);
     }
 
     await client.query("COMMIT");
@@ -154,7 +154,7 @@ export async function bulkInsert(data: ValidatedTransaction[]): Promise<void> {
           tx.to || "\\N",
           tx.amount,
           tx.isInternalCall,
-        ].join("\t") + "\n"; // Corrected: escaped backslash for tab and newline
+        ].join("\t") + "\n";
 
       input.push(row);
 
@@ -176,7 +176,7 @@ export async function bulkInsert(data: ValidatedTransaction[]): Promise<void> {
 
     // 4. Update Checkpoint
     if (maxBlockNum !== -1 && maxBlockHash) {
-      await updateCheckpoint(client, maxBlockNum, maxBlockHash);
+      await saveCheckpoint(client, maxBlockNum, maxBlockHash);
     }
 
     await client.query("COMMIT");
@@ -189,12 +189,12 @@ export async function bulkInsert(data: ValidatedTransaction[]): Promise<void> {
 }
 
 // Helper for checkpoint updates to avoid duplication
-async function updateCheckpoint(
-  client: PoolClient,
+export async function saveCheckpoint(
+  clientOrPool: PoolClient | Pool,
   blockNumber: number,
   blockHash: string,
 ) {
-  await client.query(
+  await clientOrPool.query(
     `INSERT INTO checkpoints (id, block_number, block_hash) 
          VALUES ('chain_head', $1, $2)
          ON CONFLICT (id) DO UPDATE SET block_number = $1, block_hash = $2, last_updated = NOW()`,
@@ -215,4 +215,3 @@ export async function getHeadBlock(): Promise<{
     hash: res.rows[0].block_hash,
   };
 }
-
