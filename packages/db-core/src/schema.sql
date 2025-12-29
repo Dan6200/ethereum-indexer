@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS transactions_p0_1m PARTITION OF transactions
 CREATE TABLE IF NOT EXISTS transactions_p1m_2m PARTITION OF transactions
     FOR VALUES FROM (1000000) TO (2000000);
 
--- INDEXES
+-- INDEXES (Transactions)
 -- Indices are automatically propagated to the partitions, so we only need to set on the parent table
 
 -- 1. BRIN Index for Block Number (Memory Efficient Range Lookups)
@@ -50,3 +50,42 @@ ON transactions (to_address);
 -- 3. B-Tree for specific Transaction Hash lookup
 -- (Covered by Primary Key, but explicit index can be useful if PK changes)
 -- CREATE INDEX IF NOT EXISTS idx_transactions_tx_hash ON transactions (tx_hash);
+
+-- ==========================================
+-- LOGS TABLE (NEW)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS logs (
+    block_number NUMERIC NOT NULL,
+    block_hash VARCHAR(66) NOT NULL,
+    tx_hash VARCHAR(66) NOT NULL,
+    tx_index NUMERIC NOT NULL,
+    log_index NUMERIC NOT NULL,
+    address VARCHAR(42) NOT NULL, -- Contract Address
+    data TEXT,
+    topics TEXT[], -- Array of topics for GIN indexing
+    created_at TIMESTAMP DEFAULT NOW(),
+
+    PRIMARY KEY (block_number, log_index)
+) PARTITION BY RANGE (block_number);
+
+-- Logs Partitions
+CREATE TABLE IF NOT EXISTS logs_p0_1m PARTITION OF logs
+    FOR VALUES FROM (0) TO (1000000);
+
+CREATE TABLE IF NOT EXISTS logs_p1m_2m PARTITION OF logs
+    FOR VALUES FROM (1000000) TO (2000000);
+
+-- INDEXES (Logs)
+
+-- 1. BRIN for Block Number
+CREATE INDEX IF NOT EXISTS idx_logs_block_number_brin 
+ON logs USING BRIN (block_number);
+
+-- 2. GIN Index for Topics (The "Secret Weapon" for querying events)
+-- Allows: WHERE topics @> ARRAY['0xTransferHash...']
+CREATE INDEX IF NOT EXISTS idx_logs_topics_gin 
+ON logs USING GIN (topics);
+
+-- 3. B-Tree for Contract Address
+CREATE INDEX IF NOT EXISTS idx_logs_address 
+ON logs (address);
