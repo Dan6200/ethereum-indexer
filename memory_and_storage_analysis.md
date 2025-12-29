@@ -81,4 +81,3 @@ For a mid-sized indexer tracking high-volume contracts:
 ### **Summary Formula**
 
 Total Disk Space \= (Estimated Row Count \* 1.5KB) \* 1.3 (Safety Buffer)
-
