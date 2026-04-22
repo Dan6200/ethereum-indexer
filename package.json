@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "pnpm -r run build",
-    "test": "pnpm -r run test",
+    "build": "bun run --filter '*' build",
+    "test": "bun run --filter '*' test",
     "prepare": "husky"
   },
   "lint-staged": {
