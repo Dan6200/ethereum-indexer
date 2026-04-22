@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { Command } from "commander";
 import { rollbackCommand } from "./commands/rollback";
 import { backfillCommand } from "./commands/backfill";
