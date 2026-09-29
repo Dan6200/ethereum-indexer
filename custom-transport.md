@@ -9,17 +9,11 @@ Instead of using the default viem `fallback` transport, we create a custom trans
 3. Type Safety: Run the data returned from the fallback providers to ensure they have not suddenly modified the expected data structure.
 
 ```ts
-import {
-  createPublicClient,
-  fallback,
-  http,
-  PublicClient,
-  HttpTransport,
-} from "viem";
+import { createPublicClient, fallback, http, PublicClient, HttpTransport } from "viem";
 import { mainnet } from "viem/chains";
 
 /**
- * ARCHITECTURAL NOTE FOR DANIEL:
+ * ARCHITECTURAL NOTE:
  * Standard fallbacks only check if the node is "online" (HTTP 200).
  * For an Indexer, an "online" node that is 10 blocks behind is actually "broken."
  * This wrapper demonstrates how to proactively monitor block height.
@@ -78,15 +72,10 @@ class ReliableProviderManager {
 
   public getClient(): PublicClient {
     // Filter out the stale/broken providers dynamically
-    const activeTransports = this.providers
-      .filter((p) => !this.unhealthyProviders.has(p.url))
-      .map((p) => http(p.url));
+    const activeTransports = this.providers.filter((p) => !this.unhealthyProviders.has(p.url)).map((p) => http(p.url));
 
     // Fallback to the first provider if all are "unhealthy" (prevent total crash)
-    const finalTransports =
-      activeTransports.length > 0
-        ? activeTransports
-        : [http(this.providers[0].url)];
+    const finalTransports = activeTransports.length > 0 ? activeTransports : [http(this.providers[0].url)];
 
     return createPublicClient({
       chain: mainnet,
@@ -95,7 +84,7 @@ class ReliableProviderManager {
   }
 }
 
-// Usage in your Indexer Daemon
+// Usage in the Indexer Daemon
 const manager = new ReliableProviderManager([
   {
     url: `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_KEY}`,
