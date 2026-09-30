@@ -2,9 +2,13 @@
   "name": "custom-eth-indexer",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "bun@1.3.10",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "bun run --filter '*' build",
-    "test": "bun run --filter '*' test",
+    "build:all": "bun run --filter '*' build",
+    "test:all": "bun run --filter '*' test",
     "prepare": "husky"
   },
   "lint-staged": {
