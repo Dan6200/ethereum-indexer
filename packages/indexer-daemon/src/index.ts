@@ -28,7 +28,7 @@ async function main() {
         const txs = await fetchBlockData(Number(onChainBlockNumber));
 
         if (txs.length > 0) {
-          await insertRows(txs);
+          await insertRows({ transactions: txs, logs: [] });
         } else {
           // We need to fetch the block header to get the hash for the checkpoint
           const header = await fetchBlockHeader(Number(onChainBlockNumber));
@@ -69,7 +69,7 @@ async function main() {
       const txs = await fetchBlockData(targetBlockNum);
 
       if (txs.length > 0) {
-        await insertRows(txs);
+        await insertRows({ transactions: txs, logs: [] });
         console.log(`[SUCCESS] Indexed block ${targetBlockNum} (${txs.length} txs)`);
       } else {
         // Handle Empty Block: Must explicitly advance checkpoint
