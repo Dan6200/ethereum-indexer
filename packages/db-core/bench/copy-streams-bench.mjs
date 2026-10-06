@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Correctness + throughput benchmark for pg-copy-streams, runnable identically
 // under node and bun (plain ESM, no TS/build step).
-//   node copy-streams-bench.mjs [--rows N] [--runs M] [--baseline]
-//   bun  copy-streams-bench.mjs [--rows N] [--runs M] [--baseline]
+//   node copy-streams-bench.mjs [--rows N] [--runs M] [--baseline] [--no-batch]
+//   bun  copy-streams-bench.mjs [--rows N] [--runs M] [--baseline] [--no-batch]
 
 import pg from "pg";
 import copyStreams from "pg-copy-streams";
@@ -16,17 +16,20 @@ const TABLE = "bench_copy_streams";
 const STAGING = "staging_bench";
 const COLS = "(id, amount, note, tags)";
 
+const COPY_CHUNK_BYTES = 1024 * 1024; // ~1MB per CopyData frame
+
 const runtime = process.versions.bun ? "bun" : "node";
 const runtimeVersion = process.versions.bun || process.versions.node;
 
 // --- argv ------------------------------------------------------------------
 function parseArgs(argv) {
-  const args = { rows: 100000, runs: 3, baseline: false };
+  const args = { rows: 100000, runs: 3, baseline: false, batch: true };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--rows") args.rows = parseInt(argv[++i], 10);
     else if (a === "--runs") args.runs = parseInt(argv[++i], 10);
     else if (a === "--baseline") args.baseline = true;
+    else if (a === "--no-batch") args.batch = false;
   }
   if (!Number.isFinite(args.rows) || args.rows < 1) args.rows = 100000;
   if (!Number.isFinite(args.runs) || args.runs < 1) args.runs = 3;
@@ -60,14 +63,33 @@ function toCopyLine(row) {
   return `${row.id}\t${row.amount}\t${note}\t{${row.tags.join(",")}}\n`;
 }
 
+// Push pre-formatted lines into the COPY stream. `batched` accumulates ~1MB
+// CopyData frames; the legacy per-row path pushes one line per frame.
+function pushLines(input, lines, batched) {
+  if (batched) {
+    let buf = "";
+    for (const line of lines) {
+      buf += line;
+      if (buf.length >= COPY_CHUNK_BYTES) {
+        input.push(buf);
+        buf = "";
+      }
+    }
+    if (buf.length > 0) input.push(buf);
+    input.push(null);
+  } else {
+    for (const line of lines) input.push(line);
+    input.push(null);
+  }
+}
+
 // --- shared COPY->staging->merge transaction --------------------------------
-async function copyMergeTransaction(client, lines) {
+async function copyMergeTransaction(client, lines, batched = true) {
   await client.query("BEGIN");
   await client.query(`CREATE TEMP TABLE ${STAGING} (LIKE ${TABLE} INCLUDING DEFAULTS) ON COMMIT DROP`);
   const stream = client.query(copyFrom(`COPY ${STAGING} ${COLS} FROM STDIN`));
   const input = new Readable({ read() {} });
-  for (const line of lines) input.push(line);
-  input.push(null);
+  pushLines(input, lines, batched);
   await pipeline(input, stream);
   await client.query(
     `INSERT INTO ${TABLE} ${COLS} SELECT id, amount, note, tags FROM ${STAGING} ON CONFLICT (id) DO NOTHING`,
@@ -77,7 +99,7 @@ async function copyMergeTransaction(client, lines) {
 }
 
 // --- correctness ------------------------------------------------------------
-async function runCorrectness(client) {
+async function runCorrectness(client, batched) {
   console.log("\n[correctness]");
   let ok = true;
   const fail = (label, got, expected) => {
@@ -95,7 +117,7 @@ async function runCorrectness(client) {
 
   const lines = rows.map(toCopyLine);
 
-  await copyMergeTransaction(client, lines);
+  await copyMergeTransaction(client, lines, batched);
   const count1 = (await client.query(`SELECT COUNT(*)::int AS c FROM ${TABLE}`)).rows[0].c;
   if (count1 === N) pass(`first COPY+merge COUNT == ${N}`);
   else fail(`first COPY+merge COUNT == ${N}`, count1, N);
@@ -118,7 +140,7 @@ async function runCorrectness(client) {
   else fail("non-null note round-trips", noteRow.note, "hello world");
 
   // Idempotency: same batch again must be a no-op under ON CONFLICT DO NOTHING.
-  await copyMergeTransaction(client, lines);
+  await copyMergeTransaction(client, lines, batched);
   const count2 = (await client.query(`SELECT COUNT(*)::int AS c FROM ${TABLE}`)).rows[0].c;
   if (count2 === N) pass(`second COPY+merge COUNT unchanged (== ${N})`);
   else fail(`second COPY+merge COUNT unchanged (== ${N})`, count2, N);
@@ -127,14 +149,14 @@ async function runCorrectness(client) {
 }
 
 // --- throughput -------------------------------------------------------------
-async function runThroughput(client, rows, runs) {
-  console.log(`\n[benchmark] rows=${rows.length} runs=${runs}`);
+async function runThroughput(client, rows, runs, batched) {
+  console.log(`\n[benchmark] rows=${rows.length} runs=${runs} batch=${batched}`);
   const lines = rows.map(toCopyLine);
   const times = [];
   for (let r = 1; r <= runs; r++) {
     await client.query(`TRUNCATE TABLE ${TABLE}`);
     const t0 = performance.now();
-    await copyMergeTransaction(client, lines);
+    await copyMergeTransaction(client, lines, batched);
     const ms = performance.now() - t0;
     times.push(ms);
     console.log(`  run ${r}/${runs}: ${ms.toFixed(1)} ms  ${((rows.length * 1000) / ms).toFixed(0)} rows/s`);
@@ -186,7 +208,7 @@ async function main() {
   console.log(
     `pg-copy-streams ${copyStreams && copyStreams.from ? "loaded" : "MISSING"} | pg ${pg && pg.Client ? "loaded" : "MISSING"}`,
   );
-  console.log(`table: ${TABLE} | rows=${args.rows} runs=${args.runs} baseline=${args.baseline}`);
+  console.log(`table: ${TABLE} | rows=${args.rows} runs=${args.runs} baseline=${args.baseline} batch=${args.batch}`);
 
   const client = makeClient();
   await client.connect();
@@ -203,11 +225,11 @@ async function main() {
       )
     `);
 
-    const correctnessOk = await runCorrectness(client);
+    const correctnessOk = await runCorrectness(client, args.batch);
 
     const rows = [];
     for (let i = 0; i < args.rows; i++) rows.push(genRow(i));
-    const bench = await runThroughput(client, rows, args.runs);
+    const bench = await runThroughput(client, rows, args.runs, args.batch);
 
     if (args.baseline) await runBaseline(client, rows, Math.max(1, Math.min(args.runs, 1)));
 

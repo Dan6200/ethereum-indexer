@@ -1,11 +1,5 @@
 import { getClient, fetchBlockHeader, fetchBlockData } from "@app/blockchain";
-import {
-  getHeadBlock,
-  rollbackState,
-  insertBatch,
-  saveCheckpoint,
-  getPool,
-} from "@app/db-core";
+import { getHeadBlock, rollbackState, insertRows, saveCheckpoint, getPool } from "@app/db-core";
 
 const POLLING_INTERVAL_MS = 2000;
 
@@ -26,28 +20,20 @@ async function main() {
       // 1. Get Current State
       const dbHead = await getHeadBlock();
       const onChainBlockNumber = await client.getBlockNumber();
-      const targetBlockNum = dbHead
-        ? dbHead.number + 1
-        : Number(onChainBlockNumber);
+      const targetBlockNum = dbHead ? dbHead.number + 1 : Number(onChainBlockNumber);
 
       // If DB is empty, start at current chain head (simplified)
       if (!dbHead) {
-        console.log(
-          `[INFO] Database is empty. Initializing at chain head: ${onChainBlockNumber}`,
-        );
+        console.log(`[INFO] Database is empty. Initializing at chain head: ${onChainBlockNumber}`);
         const txs = await fetchBlockData(Number(onChainBlockNumber));
 
         if (txs.length > 0) {
-          await insertBatch(txs);
+          await insertRows(txs);
         } else {
           // We need to fetch the block header to get the hash for the checkpoint
           const header = await fetchBlockHeader(Number(onChainBlockNumber));
           if (header && header.hash) {
-            await saveCheckpoint(
-              getPool(),
-              Number(onChainBlockNumber),
-              header.hash,
-            );
+            await saveCheckpoint(getPool(), Number(onChainBlockNumber), header.hash);
           }
         }
 
@@ -83,21 +69,13 @@ async function main() {
       const txs = await fetchBlockData(targetBlockNum);
 
       if (txs.length > 0) {
-        await insertBatch(txs);
-        console.log(
-          `[SUCCESS] Indexed block ${targetBlockNum} (${txs.length} txs)`,
-        );
+        await insertRows(txs);
+        console.log(`[SUCCESS] Indexed block ${targetBlockNum} (${txs.length} txs)`);
       } else {
         // Handle Empty Block: Must explicitly advance checkpoint
         if (targetBlockHeader && targetBlockHeader.hash) {
-          await saveCheckpoint(
-            getPool(),
-            targetBlockNum,
-            targetBlockHeader.hash,
-          );
-          console.log(
-            `[SUCCESS] Indexed block ${targetBlockNum} (0 txs) - Checkpoint Advanced`,
-          );
+          await saveCheckpoint(getPool(), targetBlockNum, targetBlockHeader.hash);
+          console.log(`[SUCCESS] Indexed block ${targetBlockNum} (0 txs) - Checkpoint Advanced`);
         }
       }
     } catch (error) {
