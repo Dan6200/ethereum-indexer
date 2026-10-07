@@ -1,7 +1,6 @@
 import { Command } from "commander";
 import { bulkInsert } from "@app/db-core";
-import { fetchBlockData } from "@app/blockchain";
-import { ValidatedTransaction } from "@app/schemas";
+import { fetchBlockData, BlockIngestData } from "@app/blockchain";
 
 export const backfillCommand = new Command("backfill")
   .description("Backfill historical data for a specific block range")
@@ -26,11 +25,10 @@ export const backfillCommand = new Command("backfill")
     console.log(`Starting backfill from ${start} to ${end} (Batch Size: ${batchSize} blocks)...`);
 
     let currentBlock = start;
-    let pendingBatch: ValidatedTransaction[] = [];
 
     const MAX_RETRIES = 5;
     // Simple exponential backoff for fetching
-    const fetchWithRetry = async (blockNum: number, retries = MAX_RETRIES): Promise<ValidatedTransaction[]> => {
+    const fetchWithRetry = async (blockNum: number, retries = MAX_RETRIES): Promise<BlockIngestData> => {
       try {
         return await fetchBlockData(blockNum);
       } catch (err) {
@@ -62,13 +60,16 @@ export const backfillCommand = new Command("backfill")
         }
 
         const results = await Promise.all(promises);
-        const flatResults = results.flat();
+        const transactions = results.flatMap((r) => r.transactions);
+        const logs = results.flatMap((r) => r.logs);
 
-        if (flatResults.length > 0) {
-          console.log(`Committing ${flatResults.length} transactions for blocks ${currentBlock}-${batchEnd}...`);
-          await bulkInsert({ transactions: flatResults, logs: [] });
+        if (transactions.length > 0 || logs.length > 0) {
+          console.log(
+            `Committing ${transactions.length} transactions and ${logs.length} logs for blocks ${currentBlock}-${batchEnd}...`,
+          );
+          await bulkInsert({ transactions, logs });
         } else {
-          console.log(`No transactions found in blocks ${currentBlock}-${batchEnd}.`);
+          console.log(`No transactions or logs found in blocks ${currentBlock}-${batchEnd}.`);
         }
 
         currentBlock = batchEnd + 1;

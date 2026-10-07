@@ -1,6 +1,11 @@
 import { createPublicClient, http, fallback, PublicClient } from "viem";
 import { mainnet } from "viem/chains";
-import { ValidatedTransaction } from "@app/schemas";
+import { ValidatedTransaction, ValidatedLog } from "@app/schemas";
+
+export interface BlockIngestData {
+  transactions: ValidatedTransaction[];
+  logs: ValidatedLog[];
+}
 
 interface ProviderConfig {
   url: string;
@@ -16,9 +21,7 @@ class ReliableProviderManager {
   constructor(providers: ProviderConfig[]) {
     this.providers = providers;
     if (this.providers.length === 0) {
-      console.warn(
-        "[WARN] No RPC_URLS provided. Defaulting to Cloudflare (not recommended for production).",
-      );
+      console.warn("[WARN] No RPC_URLS provided. Defaulting to Cloudflare (not recommended for production).");
       this.providers.push({ url: "https://cloudflare-eth.com" });
     }
     // Start the background health monitor
@@ -85,15 +88,10 @@ class ReliableProviderManager {
 
   public getClient(): PublicClient {
     // Filter out the stale/broken providers dynamically
-    const activeTransports = this.providers
-      .filter((p) => !this.unhealthyProviders.has(p.url))
-      .map((p) => http(p.url));
+    const activeTransports = this.providers.filter((p) => !this.unhealthyProviders.has(p.url)).map((p) => http(p.url));
 
     // Fallback to the first provider if all are "unhealthy" (prevent total crash)
-    const finalTransports =
-      activeTransports.length > 0
-        ? activeTransports
-        : [http(this.providers[0].url)];
+    const finalTransports = activeTransports.length > 0 ? activeTransports : [http(this.providers[0].url)];
 
     return createPublicClient({
       chain: mainnet,
@@ -125,11 +123,9 @@ export async function fetchBlockHeader(blockNumber: number) {
 }
 
 /**
- * Fetches a block and all its transactions, transforming them into our schema format.
+ * Fetches a block, all its transactions, and all its logs, transforming them into our schema format.
  */
-export async function fetchBlockData(
-  blockNumber: number,
-): Promise<ValidatedTransaction[]> {
+export async function fetchBlockData(blockNumber: number): Promise<BlockIngestData> {
   const client = getClient();
 
   try {
@@ -139,6 +135,7 @@ export async function fetchBlockData(
     });
 
     const validatedTxs: ValidatedTransaction[] = [];
+    const validatedLogs: ValidatedLog[] = [];
 
     for (const tx of block.transactions) {
       if (typeof tx === "string") continue;
@@ -155,7 +152,46 @@ export async function fetchBlockData(
       });
     }
 
-    return validatedTxs;
+    try {
+      const receipts = await client.getBlockReceipts({
+        blockNumber: BigInt(blockNumber),
+      });
+
+      for (const receipt of receipts) {
+        for (const log of receipt.logs) {
+          validatedLogs.push({
+            blockNumber: Number(log.blockNumber ?? block.number),
+            blockHash: (log.blockHash ?? block.hash)!,
+            transactionHash: log.transactionHash ?? receipt.transactionHash,
+            transactionIndex: Number(log.transactionIndex ?? receipt.transactionIndex),
+            logIndex: Number(log.logIndex),
+            address: log.address,
+            data: log.data,
+            topics: [...log.topics],
+          });
+        }
+      }
+    } catch {
+      const logs = await client.getLogs({
+        fromBlock: BigInt(blockNumber),
+        toBlock: BigInt(blockNumber),
+      });
+
+      for (const log of logs) {
+        validatedLogs.push({
+          blockNumber: Number(log.blockNumber ?? block.number),
+          blockHash: (log.blockHash ?? block.hash)!,
+          transactionHash: log.transactionHash!,
+          transactionIndex: Number(log.transactionIndex),
+          logIndex: Number(log.logIndex),
+          address: log.address,
+          data: log.data,
+          topics: [...log.topics],
+        });
+      }
+    }
+
+    return { transactions: validatedTxs, logs: validatedLogs };
   } catch (error) {
     console.error(`Error fetching block ${blockNumber}:`, error);
     throw error;

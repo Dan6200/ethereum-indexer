@@ -25,10 +25,10 @@ async function main() {
       // If DB is empty, start at current chain head (simplified)
       if (!dbHead) {
         console.log(`[INFO] Database is empty. Initializing at chain head: ${onChainBlockNumber}`);
-        const txs = await fetchBlockData(Number(onChainBlockNumber));
+        const { transactions, logs } = await fetchBlockData(Number(onChainBlockNumber));
 
-        if (txs.length > 0) {
-          await insertRows({ transactions: txs, logs: [] });
+        if (transactions.length > 0 || logs.length > 0) {
+          await insertRows({ transactions, logs });
         } else {
           // We need to fetch the block header to get the hash for the checkpoint
           const header = await fetchBlockHeader(Number(onChainBlockNumber));
@@ -66,11 +66,11 @@ async function main() {
 
       // 5. Lineage Verified - Process the Block
       console.log(`Processing block ${targetBlockNum}...`);
-      const txs = await fetchBlockData(targetBlockNum);
+      const { transactions, logs } = await fetchBlockData(targetBlockNum);
 
-      if (txs.length > 0) {
-        await insertRows({ transactions: txs, logs: [] });
-        console.log(`[SUCCESS] Indexed block ${targetBlockNum} (${txs.length} txs)`);
+      if (transactions.length > 0 || logs.length > 0) {
+        await insertRows({ transactions, logs });
+        console.log(`[SUCCESS] Indexed block ${targetBlockNum} (${transactions.length} txs, ${logs.length} logs)`);
       } else {
         // Handle Empty Block: Must explicitly advance checkpoint
         if (targetBlockHeader && targetBlockHeader.hash) {
