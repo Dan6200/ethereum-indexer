@@ -11,18 +11,37 @@ interface ProviderConfig {
   url: string;
 }
 
+interface ProviderEntry {
+  url: string;
+  client: PublicClient;
+}
+
 class ReliableProviderManager {
-  private providers: ProviderConfig[];
+  private providers: ProviderEntry[];
   private unhealthyProviders: Set<string> = new Set();
   private blockHeights: Map<string, number> = new Map();
   // We keep a reference to the monitoring interval to prevent process hanging (optional cleanup)
   private monitorInterval: NodeJS.Timeout | null = null;
+  private cachedClient: PublicClient | null = null;
+  private cachedClientKey = "";
 
   constructor(providers: ProviderConfig[]) {
-    this.providers = providers;
+    this.providers = providers.map((p) => ({
+      url: p.url,
+      client: createPublicClient({
+        chain: mainnet,
+        transport: http(p.url),
+      }),
+    }));
     if (this.providers.length === 0) {
       console.warn("[WARN] No RPC_URLS provided. Defaulting to Cloudflare (not recommended for production).");
-      this.providers.push({ url: "https://cloudflare-eth.com" });
+      this.providers.push({
+        url: "https://cloudflare-eth.com",
+        client: createPublicClient({
+          chain: mainnet,
+          transport: http("https://cloudflare-eth.com"),
+        }),
+      });
     }
     // Start the background health monitor
     this.monitorHealth();
@@ -35,6 +54,7 @@ class ReliableProviderManager {
     this.monitorInterval = setInterval(async () => {
       await this.checkProviders();
     }, 10000); // Check every 10 seconds
+    this.monitorInterval.unref();
   }
 
   private async checkProviders() {
@@ -43,12 +63,7 @@ class ReliableProviderManager {
     // 1. Fetch current block height from all providers
     for (const p of this.providers) {
       try {
-        // We create a temporary client just for this check
-        const client = createPublicClient({
-          chain: mainnet,
-          transport: http(p.url),
-        });
-        const height = Number(await client.getBlockNumber());
+        const height = Number(await p.client.getBlockNumber());
         this.blockHeights.set(p.url, height);
         if (height > maxHeight) maxHeight = height;
       } catch (e) {
@@ -87,16 +102,20 @@ class ReliableProviderManager {
   }
 
   public getClient(): PublicClient {
-    // Filter out the stale/broken providers dynamically
-    const activeTransports = this.providers.filter((p) => !this.unhealthyProviders.has(p.url)).map((p) => http(p.url));
-
-    // Fallback to the first provider if all are "unhealthy" (prevent total crash)
-    const finalTransports = activeTransports.length > 0 ? activeTransports : [http(this.providers[0].url)];
-
-    return createPublicClient({
-      chain: mainnet,
-      transport: fallback(finalTransports, { rank: true }),
-    });
+    const activeUrls = this.providers.filter((p) => !this.unhealthyProviders.has(p.url)).map((p) => p.url);
+    const effectiveUrls = activeUrls.length > 0 ? activeUrls : [this.providers[0].url];
+    const key = effectiveUrls.join(",");
+    if (!this.cachedClient || key !== this.cachedClientKey) {
+      this.cachedClient = createPublicClient({
+        chain: mainnet,
+        transport: fallback(
+          effectiveUrls.map((u) => http(u)),
+          { rank: true },
+        ),
+      });
+      this.cachedClientKey = key;
+    }
+    return this.cachedClient;
   }
 }
 
