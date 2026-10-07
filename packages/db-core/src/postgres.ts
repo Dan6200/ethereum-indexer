@@ -266,7 +266,8 @@ export async function getHeadBlock(): Promise<{
   const res = await pool.query(`SELECT block_number, block_hash FROM checkpoints WHERE id = 'chain_head'`);
   if (res.rows.length === 0) return null;
   return {
-    number: parseFloat(res.rows[0].block_number),
+    // Safe: Ethereum block heights are far below Number.MAX_SAFE_INTEGER
+    number: Number(res.rows[0].block_number),
     hash: res.rows[0].block_hash,
   };
 }
