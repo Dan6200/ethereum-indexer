@@ -119,20 +119,9 @@ export async function insertRows(data: IngestData): Promise<void> {
     }
 
     // 3. Update Checkpoint (using the max block from transactions, or logs if no txs)
-    let maxBlockNum = -1;
-    let maxBlockHash = "";
-
-    // We check both arrays to find the absolute max block processed
-    const allItems = [...data.transactions, ...data.logs];
-    for (const item of allItems) {
-      if (item.blockNumber > maxBlockNum) {
-        maxBlockNum = item.blockNumber;
-        maxBlockHash = item.blockHash;
-      }
-    }
-
-    if (maxBlockNum !== -1 && maxBlockHash) {
-      await saveCheckpoint(client, maxBlockNum, maxBlockHash);
+    const maxBlock = getMaxBlock([...data.transactions, ...data.logs]);
+    if (maxBlock) {
+      await saveCheckpoint(client, maxBlock.blockNumber, maxBlock.blockHash);
     }
 
     await client.query("COMMIT");
@@ -234,18 +223,9 @@ export async function bulkInsert(data: IngestData): Promise<void> {
     }
 
     // === CHECKPOINT ===
-    let maxBlockNum = -1;
-    let maxBlockHash = "";
-    const allItems = [...data.transactions, ...data.logs];
-    for (const item of allItems) {
-      if (item.blockNumber > maxBlockNum) {
-        maxBlockNum = item.blockNumber;
-        maxBlockHash = item.blockHash;
-      }
-    }
-
-    if (maxBlockNum !== -1 && maxBlockHash) {
-      await saveCheckpoint(client, maxBlockNum, maxBlockHash);
+    const maxBlock = getMaxBlock([...data.transactions, ...data.logs]);
+    if (maxBlock) {
+      await saveCheckpoint(client, maxBlock.blockNumber, maxBlock.blockHash);
     }
 
     await client.query("COMMIT");
@@ -265,6 +245,18 @@ export async function saveCheckpoint(clientOrPool: PoolClient | Pool, blockNumbe
          ON CONFLICT (id) DO UPDATE SET block_number = $1, block_hash = $2, last_updated = NOW()`,
     [blockNumber, blockHash],
   );
+}
+
+function getMaxBlock(
+  items: { blockNumber: number; blockHash: string }[],
+): { blockNumber: number; blockHash: string } | null {
+  let maxBlock: { blockNumber: number; blockHash: string } | null = null;
+  for (const item of items) {
+    if (maxBlock === null || item.blockNumber > maxBlock.blockNumber) {
+      maxBlock = { blockNumber: item.blockNumber, blockHash: item.blockHash };
+    }
+  }
+  return maxBlock;
 }
 
 export async function getHeadBlock(): Promise<{
