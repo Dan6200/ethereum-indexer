@@ -33,24 +33,21 @@ export const getPool = () => pool;
  * Executes the core rollback logic necessary to handle a blockchain re-org.
  * This deletes all data from the fork point onwards in a single atomic transaction.
  */
-export async function rollbackState(forkBlockNumber: number): Promise<void> {
-  console.log(`[DB] Re-org detected. Rolling back state to block ${forkBlockNumber}...`);
+export async function rollbackState(newHeadBlockNumber: number, newHeadHash: string): Promise<void> {
+  console.log(`[DB] Re-org detected. Rolling back state up to and including block ${newHeadBlockNumber}...`);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // 1. Delete transactions and logs from the forked block onwards
-    await client.query(`DELETE FROM transactions WHERE block_number >= $1`, [forkBlockNumber]);
-    await client.query(`DELETE FROM logs WHERE block_number >= $1`, [forkBlockNumber]);
+    // 1. Delete transactions and logs strictly after the new head
+    await client.query(`DELETE FROM transactions WHERE block_number > $1`, [newHeadBlockNumber]);
+    await client.query(`DELETE FROM logs WHERE block_number > $1`, [newHeadBlockNumber]);
 
-    // 2. Update the checkpoint to the previous block
-    const prevBlock = forkBlockNumber - 1;
-    await client.query(`UPDATE checkpoints SET block_number = $1, last_updated = NOW() WHERE id = 'chain_head'`, [
-      prevBlock,
-    ]);
+    // 2. Set the checkpoint to the new head (number and hash)
+    await saveCheckpoint(client, newHeadBlockNumber, newHeadHash);
 
     await client.query("COMMIT");
-    console.log(`[DB] Rollback complete. State is now consistent up to block ${prevBlock}.`);
+    console.log(`[DB] Rollback complete. State is now consistent up to and including block ${newHeadBlockNumber}.`);
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("[DB ERROR] Rollback failed. Indexer halted.", error);

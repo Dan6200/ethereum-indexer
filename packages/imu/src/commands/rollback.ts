@@ -1,14 +1,10 @@
 import { Command } from "commander";
 import { rollbackState, getHeadBlock } from "@app/db-core";
+import { fetchBlockHeader } from "@app/blockchain";
 
 export const rollbackCommand = new Command("rollback")
-  .description(
-    "Manually rollback the indexer database to a specific block number",
-  )
-  .argument(
-    "<blockNumber>",
-    "The block number to roll back to (data *after* this block will be deleted)",
-  )
+  .description("Manually rollback the indexer database to a specific block number")
+  .argument("<blockNumber>", "The block number to roll back to (data *after* this block will be deleted)")
   .action(async (blockNumberStr) => {
     const blockNumber = parseInt(blockNumberStr, 10);
 
@@ -20,9 +16,7 @@ export const rollbackCommand = new Command("rollback")
     try {
       const head = await getHeadBlock();
       if (!head) {
-        console.log(
-          "Database is empty or has no checkpoint. Nothing to rollback.",
-        );
+        console.log("Database is empty or has no checkpoint. Nothing to rollback.");
         return;
       }
 
@@ -37,7 +31,12 @@ export const rollbackCommand = new Command("rollback")
       console.log(`Target Rollback: ${blockNumber}`);
       console.log("Initiating atomic rollback...");
 
-      await rollbackState(blockNumber);
+      const header = await fetchBlockHeader(blockNumber);
+      if (!header || !header.hash) {
+        console.error(`Error: Could not fetch header for block ${blockNumber}.`);
+        process.exit(1);
+      }
+      await rollbackState(blockNumber, header.hash);
 
       console.log("Rollback successful.");
       process.exit(0);

@@ -57,10 +57,11 @@ async function main() {
         console.warn(
           `Target Block ${targetBlockNum} parent (${targetBlockHeader.parentHash}) !== DB Head (${dbHead.hash})`,
         );
-        console.warn(`Initiating rollback of block ${dbHead.number}...`);
+        const newHeadNum = dbHead.number - 1;
+        console.warn(`Initiating rollback to block ${newHeadNum}...`);
 
-        // Rollback the current head. Next loop will retry the previous block (or further back).
-        await rollbackState(dbHead.number);
+        const newHeadHeader = await fetchBlockHeader(newHeadNum);
+        await rollbackState(newHeadNum, newHeadHeader.hash!);
         continue;
       }
 
