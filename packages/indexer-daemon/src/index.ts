@@ -20,20 +20,20 @@ async function main() {
       // 1. Get Current State
       const dbHead = await getHeadBlock();
       const onChainBlockNumber = await client.getBlockNumber();
-      const targetBlockNum = dbHead ? dbHead.number + 1 : Number(onChainBlockNumber);
+      const targetBlockNum = dbHead ? dbHead.number + 1n : onChainBlockNumber;
 
       // If DB is empty, start at current chain head (simplified)
       if (!dbHead) {
         console.log(`[INFO] Database is empty. Initializing at chain head: ${onChainBlockNumber}`);
-        const { transactions, logs } = await fetchBlockData(Number(onChainBlockNumber));
+        const { transactions, logs } = await fetchBlockData(onChainBlockNumber);
 
         if (transactions.length > 0 || logs.length > 0) {
           await insertRows({ transactions, logs });
         } else {
           // We need to fetch the block header to get the hash for the checkpoint
-          const header = await fetchBlockHeader(Number(onChainBlockNumber));
+          const header = await fetchBlockHeader(onChainBlockNumber);
           if (header && header.hash) {
-            await saveCheckpoint(getPool(), Number(onChainBlockNumber), header.hash);
+            await saveCheckpoint(getPool(), onChainBlockNumber, header.hash);
           }
         }
 
@@ -42,7 +42,7 @@ async function main() {
       }
 
       // 2. Check if we are behind
-      if (targetBlockNum > Number(onChainBlockNumber)) {
+      if (targetBlockNum > onChainBlockNumber) {
         // Synced. Wait.
         await sleep(POLLING_INTERVAL_MS);
         continue;
@@ -57,7 +57,7 @@ async function main() {
         console.warn(
           `Target Block ${targetBlockNum} parent (${targetBlockHeader.parentHash}) !== DB Head (${dbHead.hash})`,
         );
-        const newHeadNum = dbHead.number - 1;
+        const newHeadNum = dbHead.number - 1n;
         console.warn(`Initiating rollback to block ${newHeadNum}...`);
 
         const newHeadHeader = await fetchBlockHeader(newHeadNum);

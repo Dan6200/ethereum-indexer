@@ -3,7 +3,7 @@ import { z } from "zod";
 // Define the schema for a confirmed transaction to be stored in Postgres
 export const TransactionSchema = z.object({
   // Crucial for re-org management
-  blockNumber: z.number().int().positive(),
+  blockNumber: z.bigint().positive(),
   blockHash: z.string().startsWith("0x").length(66),
 
   // Financial data fields
@@ -13,12 +13,7 @@ export const TransactionSchema = z.object({
   transactionIndex: z.number().int().nonnegative(),
 
   // Amount must be a non-negative number string to handle large values safely
-  amount: z
-    .string()
-    .refine(
-      (s) => !isNaN(Number(s)) && Number(s) >= 0,
-      "Amount must be a non-negative number string",
-    ),
+  amount: z.string().refine((s) => !isNaN(Number(s)) && Number(s) >= 0, "Amount must be a non-negative number string"),
 
   // Custom business logic field
   isInternalCall: z.boolean().default(false),
@@ -28,7 +23,7 @@ export type ValidatedTransaction = z.infer<typeof TransactionSchema>;
 
 // Define the schema for Event Logs
 export const LogSchema = z.object({
-  blockNumber: z.number().int().positive(),
+  blockNumber: z.bigint().positive(),
   blockHash: z.string().startsWith("0x").length(66),
   transactionHash: z.string().startsWith("0x").length(66),
   transactionIndex: z.number().int().nonnegative(),
@@ -45,7 +40,7 @@ export type ValidatedLog = z.infer<typeof LogSchema>;
 
 // Combined Block Data (What our ingestor passes around)
 export const BlockDataSchema = z.object({
-  blockNumber: z.number(),
+  blockNumber: z.bigint(),
   blockHash: z.string(),
   parentHash: z.string(),
   transactions: z.array(TransactionSchema),
@@ -57,7 +52,7 @@ export type BlockData = z.infer<typeof BlockDataSchema>;
 // Schema for the Checkpoint table
 export const CheckpointSchema = z.object({
   id: z.string(),
-  blockNumber: z.number().int().positive(),
+  blockNumber: z.bigint().positive(),
   blockHash: z.string().startsWith("0x").length(66),
 });
 

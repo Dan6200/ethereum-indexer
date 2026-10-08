@@ -2,17 +2,26 @@ import { Command } from "commander";
 import { bulkInsert } from "@app/db-core";
 import { fetchBlockData, BlockIngestData } from "@app/blockchain";
 
+function parseBlockNumber(s: string): bigint | null {
+  if (!/^\d+$/.test(s.trim())) return null;
+  try {
+    return BigInt(s.trim());
+  } catch {
+    return null;
+  }
+}
+
 export const backfillCommand = new Command("backfill")
   .description("Backfill historical data for a specific block range")
   .requiredOption("-s, --start <number>", "Start block number")
   .requiredOption("-e, --end <number>", "End block number")
   .option("-b, --batch-size <number>", "Number of blocks to commit in one transaction", "10")
   .action(async (options) => {
-    const start = parseInt(options.start, 10);
-    const end = parseInt(options.end, 10);
+    const start = parseBlockNumber(options.start);
+    const end = parseBlockNumber(options.end);
     const batchSize = parseInt(options.batchSize, 10);
 
-    if (isNaN(start) || isNaN(end) || start < 0 || end < 0) {
+    if (start === null || end === null || start < 0n || end < 0n) {
       console.error("Error: Start and End blocks must be non-negative integers.");
       process.exit(1);
     }
@@ -28,7 +37,7 @@ export const backfillCommand = new Command("backfill")
 
     const MAX_RETRIES = 5;
     // Simple exponential backoff for fetching
-    const fetchWithRetry = async (blockNum: number, retries = MAX_RETRIES): Promise<BlockIngestData> => {
+    const fetchWithRetry = async (blockNum: bigint, retries = MAX_RETRIES): Promise<BlockIngestData> => {
       try {
         return await fetchBlockData(blockNum);
       } catch (err) {
@@ -49,7 +58,7 @@ export const backfillCommand = new Command("backfill")
 
     try {
       while (currentBlock <= end) {
-        const potentialBatchEnd = currentBlock + batchSize - 1;
+        const potentialBatchEnd = currentBlock + BigInt(batchSize) - 1n;
         const batchEnd = potentialBatchEnd < end ? potentialBatchEnd : end;
         console.log(`Fetching blocks ${currentBlock} to ${batchEnd}...`);
 
@@ -72,7 +81,7 @@ export const backfillCommand = new Command("backfill")
           console.log(`No transactions or logs found in blocks ${currentBlock}-${batchEnd}.`);
         }
 
-        currentBlock = batchEnd + 1;
+        currentBlock = batchEnd + 1n;
       }
 
       console.log("Backfill complete!");

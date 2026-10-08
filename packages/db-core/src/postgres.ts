@@ -33,15 +33,15 @@ export const getPool = () => pool;
  * Executes the core rollback logic necessary to handle a blockchain re-org.
  * This deletes all data from the fork point onwards in a single atomic transaction.
  */
-export async function rollbackState(newHeadBlockNumber: number, newHeadHash: string): Promise<void> {
+export async function rollbackState(newHeadBlockNumber: bigint, newHeadHash: string): Promise<void> {
   console.log(`[DB] Re-org detected. Rolling back state up to and including block ${newHeadBlockNumber}...`);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     // 1. Delete transactions and logs strictly after the new head
-    await client.query(`DELETE FROM transactions WHERE block_number > $1`, [newHeadBlockNumber]);
-    await client.query(`DELETE FROM logs WHERE block_number > $1`, [newHeadBlockNumber]);
+    await client.query(`DELETE FROM transactions WHERE block_number > $1`, [newHeadBlockNumber.toString()]);
+    await client.query(`DELETE FROM logs WHERE block_number > $1`, [newHeadBlockNumber.toString()]);
 
     // 2. Set the checkpoint to the new head (number and hash)
     await saveCheckpoint(client, newHeadBlockNumber, newHeadHash);
@@ -84,7 +84,7 @@ export async function insertRows(data: IngestData): Promise<void> {
       for (const tx of data.transactions) {
         await client.query(queryTx, [
           tx.transactionHash,
-          tx.blockNumber,
+          tx.blockNumber.toString(),
           tx.blockHash,
           tx.transactionIndex,
           tx.from,
@@ -106,7 +106,7 @@ export async function insertRows(data: IngestData): Promise<void> {
 
       for (const log of data.logs) {
         await client.query(queryLog, [
-          log.blockNumber,
+          log.blockNumber.toString(),
           log.blockHash,
           log.transactionHash,
           log.transactionIndex,
@@ -238,19 +238,19 @@ export async function bulkInsert(data: IngestData): Promise<void> {
 }
 
 // Helper for checkpoint updates to avoid duplication
-export async function saveCheckpoint(clientOrPool: PoolClient | Pool, blockNumber: number, blockHash: string) {
+export async function saveCheckpoint(clientOrPool: PoolClient | Pool, blockNumber: bigint, blockHash: string) {
   await clientOrPool.query(
     `INSERT INTO checkpoints (id, block_number, block_hash) 
          VALUES ('chain_head', $1, $2)
          ON CONFLICT (id) DO UPDATE SET block_number = $1, block_hash = $2, last_updated = NOW()`,
-    [blockNumber, blockHash],
+    [blockNumber.toString(), blockHash],
   );
 }
 
 function getMaxBlock(
-  items: { blockNumber: number; blockHash: string }[],
-): { blockNumber: number; blockHash: string } | null {
-  let maxBlock: { blockNumber: number; blockHash: string } | null = null;
+  items: { blockNumber: bigint; blockHash: string }[],
+): { blockNumber: bigint; blockHash: string } | null {
+  let maxBlock: { blockNumber: bigint; blockHash: string } | null = null;
   for (const item of items) {
     if (maxBlock === null || item.blockNumber > maxBlock.blockNumber) {
       maxBlock = { blockNumber: item.blockNumber, blockHash: item.blockHash };
@@ -260,14 +260,13 @@ function getMaxBlock(
 }
 
 export async function getHeadBlock(): Promise<{
-  number: number;
+  number: bigint;
   hash: string;
 } | null> {
   const res = await pool.query(`SELECT block_number, block_hash FROM checkpoints WHERE id = 'chain_head'`);
   if (res.rows.length === 0) return null;
   return {
-    // Safe: Ethereum block heights are far below Number.MAX_SAFE_INTEGER
-    number: Number(res.rows[0].block_number),
+    number: BigInt(res.rows[0].block_number),
     hash: res.rows[0].block_hash,
   };
 }

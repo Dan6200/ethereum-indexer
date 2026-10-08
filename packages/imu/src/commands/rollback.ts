@@ -2,13 +2,22 @@ import { Command } from "commander";
 import { rollbackState, getHeadBlock } from "@app/db-core";
 import { fetchBlockHeader } from "@app/blockchain";
 
+function parseBlockNumber(s: string): bigint | null {
+  if (!/^\d+$/.test(s.trim())) return null;
+  try {
+    return BigInt(s.trim());
+  } catch {
+    return null;
+  }
+}
+
 export const rollbackCommand = new Command("rollback")
   .description("Manually rollback the indexer database to a specific block number")
   .argument("<blockNumber>", "The block number to roll back to (data *after* this block will be deleted)")
   .action(async (blockNumberStr) => {
-    const blockNumber = parseInt(blockNumberStr, 10);
+    const blockNumber = parseBlockNumber(blockNumberStr);
 
-    if (isNaN(blockNumber) || blockNumber < 0) {
+    if (blockNumber === null || blockNumber < 0n) {
       console.error("Error: Block number must be a non-negative integer.");
       process.exit(1);
     }

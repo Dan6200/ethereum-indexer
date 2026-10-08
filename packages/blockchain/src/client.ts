@@ -136,20 +136,20 @@ export function getClient(): PublicClient {
 /**
  * Fetches just the block header (lightweight) for re-org checks.
  */
-export async function fetchBlockHeader(blockNumber: number) {
+export async function fetchBlockHeader(blockNumber: bigint) {
   const client = getClient();
-  return await client.getBlock({ blockNumber: BigInt(blockNumber) });
+  return await client.getBlock({ blockNumber: blockNumber });
 }
 
 /**
  * Fetches a block, all its transactions, and all its logs, transforming them into our schema format.
  */
-export async function fetchBlockData(blockNumber: number): Promise<BlockIngestData> {
+export async function fetchBlockData(blockNumber: bigint): Promise<BlockIngestData> {
   const client = getClient();
 
   try {
     const block = await client.getBlock({
-      blockNumber: BigInt(blockNumber),
+      blockNumber: blockNumber,
       includeTransactions: true,
     });
 
@@ -160,7 +160,7 @@ export async function fetchBlockData(blockNumber: number): Promise<BlockIngestDa
       if (typeof tx === "string") continue;
 
       validatedTxs.push({
-        blockNumber: Number(block.number),
+        blockNumber: block.number,
         blockHash: block.hash!,
         transactionHash: tx.hash,
         transactionIndex: Number(tx.transactionIndex),
@@ -173,13 +173,13 @@ export async function fetchBlockData(blockNumber: number): Promise<BlockIngestDa
 
     try {
       const receipts = await client.getBlockReceipts({
-        blockNumber: BigInt(blockNumber),
+        blockNumber: blockNumber,
       });
 
       for (const receipt of receipts) {
         for (const log of receipt.logs) {
           validatedLogs.push({
-            blockNumber: Number(log.blockNumber ?? block.number),
+            blockNumber: log.blockNumber ?? block.number,
             blockHash: (log.blockHash ?? block.hash)!,
             transactionHash: log.transactionHash ?? receipt.transactionHash,
             transactionIndex: Number(log.transactionIndex ?? receipt.transactionIndex),
@@ -192,13 +192,13 @@ export async function fetchBlockData(blockNumber: number): Promise<BlockIngestDa
       }
     } catch {
       const logs = await client.getLogs({
-        fromBlock: BigInt(blockNumber),
-        toBlock: BigInt(blockNumber),
+        fromBlock: blockNumber,
+        toBlock: blockNumber,
       });
 
       for (const log of logs) {
         validatedLogs.push({
-          blockNumber: Number(log.blockNumber ?? block.number),
+          blockNumber: log.blockNumber ?? block.number,
           blockHash: (log.blockHash ?? block.hash)!,
           transactionHash: log.transactionHash!,
           transactionIndex: Number(log.transactionIndex),
