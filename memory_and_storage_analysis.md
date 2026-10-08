@@ -43,7 +43,7 @@ PostgreSQL requires extra space for its WAL to ensure durability. You should alw
 
 ## **4\. Indexing Strategy & Memory Trade-offs**
 
-You mentioned using three distinct index types. Each has a specific memory and CPU profile:
+There are three distinct index types. Each has a specific memory and CPU profile:
 
 ### **A. B-Tree (The Standard)**
 
