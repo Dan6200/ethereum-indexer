@@ -34,14 +34,8 @@ class ReliableProviderManager {
       }),
     }));
     if (this.providers.length === 0) {
-      console.warn("[WARN] No RPC_URLS provided. Defaulting to Cloudflare (not recommended for production).");
-      this.providers.push({
-        url: "https://cloudflare-eth.com",
-        client: createPublicClient({
-          chain: mainnet,
-          transport: http("https://cloudflare-eth.com"),
-        }),
-      });
+      console.error("[ERROR] No RPC_URLS provided. Exiting...");
+      process.exit(1);
     }
     // Start the background health monitor
     this.monitorHealth();
