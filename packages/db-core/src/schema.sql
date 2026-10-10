@@ -28,9 +28,6 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE TABLE IF NOT EXISTS transactions_p0m_1m PARTITION OF transactions
     FOR VALUES FROM (0) TO (1000000);
 
-CREATE TABLE IF NOT EXISTS transactions_p1m_2m PARTITION OF transactions
-    FOR VALUES FROM (1000000) TO (2000000);
-
 -- INDEXES (Transactions)
 -- Indices are automatically propagated to the partitions, so we only need to set on the parent table
 
@@ -72,9 +69,6 @@ CREATE TABLE IF NOT EXISTS logs (
 -- Partitions beyond the seeds are auto-created by the app on ingest.
 CREATE TABLE IF NOT EXISTS logs_p0m_1m PARTITION OF logs
     FOR VALUES FROM (0) TO (1000000);
-
-CREATE TABLE IF NOT EXISTS logs_p1m_2m PARTITION OF logs
-    FOR VALUES FROM (1000000) TO (2000000);
 
 -- INDEXES (Logs)
 
