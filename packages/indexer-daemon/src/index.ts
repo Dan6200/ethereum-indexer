@@ -1,3 +1,4 @@
+import "./load-env";
 import { getClient, fetchBlockHeader, fetchBlockData } from "@app/blockchain";
 import { getHeadBlock, rollbackState, insertRows, saveCheckpoint, getPool } from "@app/db-core";
 

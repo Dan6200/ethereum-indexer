@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import "./load-env";
 import { Command } from "commander";
 import { rollbackCommand } from "./commands/rollback";
 import { backfillCommand } from "./commands/backfill";
@@ -7,9 +8,7 @@ const program = new Command();
 
 program
   .name("imu")
-  .description(
-    "Indexer Management Utility - Maintenance tools for the Custom Ethereum Indexer",
-  )
+  .description("Indexer Management Utility - Maintenance tools for the Custom Ethereum Indexer")
   .version("1.0.0");
 
 program.addCommand(rollbackCommand);
