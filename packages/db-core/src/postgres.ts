@@ -72,6 +72,12 @@ export async function insertRows(data: IngestData): Promise<void> {
   try {
     await client.query("BEGIN");
 
+    const maxBlock = getMaxBlock([...data.transactions, ...data.logs]);
+    if (maxBlock) {
+      await ensurePartition(client, "transactions", maxBlock.blockNumber);
+      await ensurePartition(client, "logs", maxBlock.blockNumber);
+    }
+
     // 1. Insert Transactions
     if (data.transactions.length > 0) {
       const queryTx = `
@@ -119,7 +125,6 @@ export async function insertRows(data: IngestData): Promise<void> {
     }
 
     // 3. Update Checkpoint (using the max block from transactions, or logs if no txs)
-    const maxBlock = getMaxBlock([...data.transactions, ...data.logs]);
     if (maxBlock) {
       await saveCheckpoint(client, maxBlock.blockNumber, maxBlock.blockHash);
     }
@@ -142,6 +147,12 @@ export async function bulkInsert(data: IngestData): Promise<void> {
 
   try {
     await client.query("BEGIN");
+
+    const maxBlock = getMaxBlock([...data.transactions, ...data.logs]);
+    if (maxBlock) {
+      await ensurePartition(client, "transactions", maxBlock.blockNumber);
+      await ensurePartition(client, "logs", maxBlock.blockNumber);
+    }
 
     // === PROCESS TRANSACTIONS ===
     if (data.transactions.length > 0) {
@@ -223,7 +234,6 @@ export async function bulkInsert(data: IngestData): Promise<void> {
     }
 
     // === CHECKPOINT ===
-    const maxBlock = getMaxBlock([...data.transactions, ...data.logs]);
     if (maxBlock) {
       await saveCheckpoint(client, maxBlock.blockNumber, maxBlock.blockHash);
     }
@@ -235,6 +245,26 @@ export async function bulkInsert(data: IngestData): Promise<void> {
   } finally {
     client.release();
   }
+}
+
+const PARTITION_BLOCK_SIZE = 1_000_000n; // blocks per partition
+
+function partitionName(tableName: string, startM: bigint): string {
+  return `${tableName}_p${startM}m_${startM + 1n}m`;
+}
+
+async function ensurePartition(
+  client: PoolClient,
+  tableName: "transactions" | "logs",
+  blockNumber: bigint,
+): Promise<void> {
+  const startM = blockNumber / PARTITION_BLOCK_SIZE; // integer division
+  const start = startM * PARTITION_BLOCK_SIZE;
+  const end = start + PARTITION_BLOCK_SIZE;
+  const name = partitionName(tableName, startM);
+  await client.query(
+    `CREATE TABLE IF NOT EXISTS ${name} PARTITION OF ${tableName} FOR VALUES FROM (${start}) TO (${end})`,
+  );
 }
 
 // Helper for checkpoint updates to avoid duplication

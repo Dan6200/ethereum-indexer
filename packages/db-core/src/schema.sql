@@ -24,8 +24,8 @@ CREATE TABLE IF NOT EXISTS transactions (
 ) PARTITION BY RANGE (block_number);
 
 -- Initial Partition (e.g., blocks 0 to 1,000,000)
--- In production, you would automate partition creation.
-CREATE TABLE IF NOT EXISTS transactions_p0_1m PARTITION OF transactions
+-- Partitions beyond the seeds are auto-created by the app on ingest.
+CREATE TABLE IF NOT EXISTS transactions_p0m_1m PARTITION OF transactions
     FOR VALUES FROM (0) TO (1000000);
 
 CREATE TABLE IF NOT EXISTS transactions_p1m_2m PARTITION OF transactions
@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS logs (
 ) PARTITION BY RANGE (block_number);
 
 -- Logs Partitions
-CREATE TABLE IF NOT EXISTS logs_p0_1m PARTITION OF logs
+-- Partitions beyond the seeds are auto-created by the app on ingest.
+CREATE TABLE IF NOT EXISTS logs_p0m_1m PARTITION OF logs
     FOR VALUES FROM (0) TO (1000000);
 
 CREATE TABLE IF NOT EXISTS logs_p1m_2m PARTITION OF logs
