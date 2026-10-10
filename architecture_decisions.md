@@ -62,3 +62,29 @@ We choose **Polling** as the primary mechanism for the Daemon.
 3.  **Simplicity:** No need for complex heartbeat/reconnection logic required by WS.
 
 _Note: In the future, we can add WebSockets merely as a trigger to "Poll Now," reducing latency without sacrificing the reliability of the polling loop._
+
+## ADR-003: Reorg Handling — Liveness-First with a Fast Path
+
+**Date:** 2026-10-10
+**Status:** Accepted
+
+### Context
+
+The daemon ingests blocks by polling the chain head and must remain correct when the chain reorgs. The current implementation compares the next block's `parentHash` to the stored head and rolls back one block at a time. This is only correct for exactly 1-block reorgs; deeper reorgs leave stale rows between the fork point and the head (the lineage check trusts the checkpoint hash, not the stored data). Separately, a line like `targetBlockNum = dbHead ? dbHead.number + 1n : onChainBlockNumber` treats the database as if it were authoritative over block content.
+
+### Decision
+
+1. **The chain is the source of truth; the database is a derived mirror.** The daemon reads the chain head and the DB head as two independent observations and reconciles them only after verifying agreement. The DB head is a _cursor_ ("how far we have mirrored"), never a source of block content. The next block to ingest is the canonical chain's block at height `dbHead.number + 1`, accepted only after its `parentHash` matches our mirrored head — the chain always has the final say on content and lineage.
+
+2. **Store block ancestry in a `blocks` table** (`block_number`, `block_hash`, `parent_hash`) for every processed block, including empty blocks. This is the foundation that makes arbitrary-depth reorg detection possible.
+
+3. **Fork-point detection by walk-back.** On a `parentHash` mismatch, walk back from the head comparing our stored `blocks` hashes against the canonical chain until the hashes agree; the first agreeing block is the common ancestor.
+
+4. **Single-shot rollback.** Roll back to the common ancestor in one transaction — delete all rows after it from `transactions`, `logs`, and `blocks`, and restore the checkpoint to the ancestor.
+
+5. **Fast path first (liveness bias).** ~99% of reorgs are 1-block, so keep the cheap parent-hash check plus a single-block rollback as the primary path. Only escalate to the walk-back when the fast path proves insufficient. This minimizes extra RPC round-trips and keeps ingestion moving (liveness over exhaustive re-verification).
+
+### Consequences
+
+- **Pros:** Correct for reorgs of any depth; near-zero overhead in the common case, preserving liveness.
+- **Cons:** An additional `blocks` table (one write per block) and a more complex reconciliation state machine.
