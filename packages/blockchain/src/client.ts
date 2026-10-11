@@ -1,4 +1,4 @@
-import { createPublicClient, http, fallback, PublicClient } from "viem";
+import { createPublicClient, http, fallback, PublicClient, Chain } from "viem";
 import { mainnet } from "viem/chains";
 import { ValidatedTransaction, ValidatedLog } from "@app/schemas";
 
@@ -10,7 +10,7 @@ export interface BlockIngestData {
   logs: ValidatedLog[];
 }
 
-interface ProviderConfig {
+export interface ProviderConfig {
   url: string;
 }
 
@@ -27,12 +27,14 @@ class ReliableProviderManager {
   private monitorInterval: NodeJS.Timeout | null = null;
   private cachedClient: PublicClient | null = null;
   private cachedClientKey = "";
+  private chain: Chain;
 
-  constructor(providers: ProviderConfig[]) {
+  constructor(providers: ProviderConfig[], chain: Chain = mainnet) {
+    this.chain = chain;
     this.providers = providers.map((p) => ({
       url: p.url,
       client: createPublicClient({
-        chain: mainnet,
+        chain,
         transport: http(p.url),
       }),
     }));
@@ -104,7 +106,7 @@ class ReliableProviderManager {
     const key = effectiveUrls.join(",");
     if (!this.cachedClient || key !== this.cachedClientKey) {
       this.cachedClient = createPublicClient({
-        chain: mainnet,
+        chain: this.chain,
         transport: fallback(
           effectiveUrls.map((u) => http(u)),
           { rank: true },
@@ -116,70 +118,86 @@ class ReliableProviderManager {
   }
 }
 
-// Parse env vars
-const rpcUrls = (process.env.RPC_URLS || "")
-  .split(",")
-  .map((url) => url.trim())
-  .filter(Boolean);
-const providerConfigs = rpcUrls.map((url) => ({ url }));
+export class BlockchainClient {
+  private manager: ReliableProviderManager;
 
-// Singleton Export
-const manager = new ReliableProviderManager(providerConfigs);
+  constructor(providers: ProviderConfig[], chain: Chain = mainnet) {
+    this.manager = new ReliableProviderManager(providers, chain);
+  }
 
-export function getClient(): PublicClient {
-  return manager.getClient();
-}
+  getClient(): PublicClient {
+    return this.manager.getClient();
+  }
 
-/**
- * Fetches just the block header (lightweight) for re-org checks.
- */
-export async function fetchBlockHeader(blockNumber: bigint) {
-  const client = getClient();
-  return await client.getBlock({ blockNumber: blockNumber });
-}
+  async getBlockNumber(): Promise<bigint> {
+    return this.manager.getClient().getBlockNumber();
+  }
 
-/**
- * Fetches a block, all its transactions, and all its logs, transforming them into our schema format.
- */
-export async function fetchBlockData(blockNumber: bigint): Promise<BlockIngestData> {
-  const client = getClient();
+  async fetchBlockHeader(blockNumber: bigint) {
+    return this.manager.getClient().getBlock({ blockNumber });
+  }
 
-  try {
-    const block = await client.getBlock({
-      blockNumber: blockNumber,
-      includeTransactions: true,
-    });
-
-    const validatedTxs: ValidatedTransaction[] = [];
-    const validatedLogs: ValidatedLog[] = [];
-
-    for (const tx of block.transactions) {
-      if (typeof tx === "string") continue;
-
-      validatedTxs.push({
-        blockNumber: block.number,
-        blockHash: block.hash!,
-        transactionHash: tx.hash,
-        transactionIndex: Number(tx.transactionIndex),
-        from: tx.from,
-        to: tx.to || undefined,
-        amount: tx.value.toString(),
-        isInternalCall: false,
-      });
-    }
+  /**
+   * Fetches a block, all its transactions, and all its logs, transforming them into our schema format.
+   */
+  async fetchBlockData(blockNumber: bigint): Promise<BlockIngestData> {
+    const client = this.getClient();
 
     try {
-      const receipts = await client.getBlockReceipts({
+      const block = await client.getBlock({
         blockNumber: blockNumber,
+        includeTransactions: true,
       });
 
-      for (const receipt of receipts) {
-        for (const log of receipt.logs) {
+      const validatedTxs: ValidatedTransaction[] = [];
+      const validatedLogs: ValidatedLog[] = [];
+
+      for (const tx of block.transactions) {
+        if (typeof tx === "string") continue;
+
+        validatedTxs.push({
+          blockNumber: block.number,
+          blockHash: block.hash!,
+          transactionHash: tx.hash,
+          transactionIndex: Number(tx.transactionIndex),
+          from: tx.from,
+          to: tx.to || undefined,
+          amount: tx.value.toString(),
+          isInternalCall: false,
+        });
+      }
+
+      try {
+        const receipts = await client.getBlockReceipts({
+          blockNumber: blockNumber,
+        });
+
+        for (const receipt of receipts) {
+          for (const log of receipt.logs) {
+            validatedLogs.push({
+              blockNumber: log.blockNumber ?? block.number,
+              blockHash: (log.blockHash ?? block.hash)!,
+              transactionHash: log.transactionHash ?? receipt.transactionHash,
+              transactionIndex: Number(log.transactionIndex ?? receipt.transactionIndex),
+              logIndex: Number(log.logIndex),
+              address: log.address,
+              data: log.data,
+              topics: [...log.topics],
+            });
+          }
+        }
+      } catch {
+        const logs = await client.getLogs({
+          fromBlock: blockNumber,
+          toBlock: blockNumber,
+        });
+
+        for (const log of logs) {
           validatedLogs.push({
             blockNumber: log.blockNumber ?? block.number,
             blockHash: (log.blockHash ?? block.hash)!,
-            transactionHash: log.transactionHash ?? receipt.transactionHash,
-            transactionIndex: Number(log.transactionIndex ?? receipt.transactionIndex),
+            transactionHash: log.transactionHash!,
+            transactionIndex: Number(log.transactionIndex),
             logIndex: Number(log.logIndex),
             address: log.address,
             data: log.data,
@@ -187,35 +205,28 @@ export async function fetchBlockData(blockNumber: bigint): Promise<BlockIngestDa
           });
         }
       }
-    } catch {
-      const logs = await client.getLogs({
-        fromBlock: blockNumber,
-        toBlock: blockNumber,
-      });
 
-      for (const log of logs) {
-        validatedLogs.push({
-          blockNumber: log.blockNumber ?? block.number,
-          blockHash: (log.blockHash ?? block.hash)!,
-          transactionHash: log.transactionHash!,
-          transactionIndex: Number(log.transactionIndex),
-          logIndex: Number(log.logIndex),
-          address: log.address,
-          data: log.data,
-          topics: [...log.topics],
-        });
-      }
+      return {
+        blockNumber: block.number,
+        blockHash: block.hash!,
+        parentHash: block.parentHash,
+        transactions: validatedTxs,
+        logs: validatedLogs,
+      };
+    } catch (error) {
+      console.error(`Error fetching block ${blockNumber}:`, error);
+      throw error;
     }
+  }
 
-    return {
-      blockNumber: block.number,
-      blockHash: block.hash!,
-      parentHash: block.parentHash,
-      transactions: validatedTxs,
-      logs: validatedLogs,
-    };
-  } catch (error) {
-    console.error(`Error fetching block ${blockNumber}:`, error);
-    throw error;
+  static fromEnv(chain: Chain = mainnet): BlockchainClient {
+    const rpcUrls = (process.env.RPC_URLS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return new BlockchainClient(
+      rpcUrls.map((url) => ({ url })),
+      chain,
+    );
   }
 }

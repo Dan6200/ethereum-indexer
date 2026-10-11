@@ -1,6 +1,9 @@
 import { Command } from "commander";
-import { rollbackState, getHeadBlock } from "@app/db-core";
-import { fetchBlockHeader } from "@app/blockchain";
+import { IndexerDb } from "@app/db-core";
+import { BlockchainClient } from "@app/blockchain";
+
+const chain = BlockchainClient.fromEnv();
+const db = IndexerDb.fromEnv();
 
 function parseBlockNumber(s: string): bigint | null {
   if (!/^\d+$/.test(s.trim())) return null;
@@ -23,7 +26,7 @@ export const rollbackCommand = new Command("rollback")
     }
 
     try {
-      const head = await getHeadBlock();
+      const head = await db.getHeadBlock();
       if (!head) {
         console.log("Database is empty or has no checkpoint. Nothing to rollback.");
         return;
@@ -40,12 +43,12 @@ export const rollbackCommand = new Command("rollback")
       console.log(`Target Rollback: ${blockNumber}`);
       console.log("Initiating atomic rollback...");
 
-      const header = await fetchBlockHeader(blockNumber);
+      const header = await chain.fetchBlockHeader(blockNumber);
       if (!header || !header.hash) {
         console.error(`Error: Could not fetch header for block ${blockNumber}.`);
         process.exit(1);
       }
-      await rollbackState(blockNumber, header.hash);
+      await db.rollbackState(blockNumber, header.hash);
 
       console.log("Rollback successful.");
       process.exit(0);

@@ -1,6 +1,9 @@
 import { Command } from "commander";
-import { bulkInsert } from "@app/db-core";
-import { fetchBlockData, BlockIngestData } from "@app/blockchain";
+import { IndexerDb } from "@app/db-core";
+import { BlockchainClient, BlockIngestData } from "@app/blockchain";
+
+const chain = BlockchainClient.fromEnv();
+const db = IndexerDb.fromEnv();
 
 function parseBlockNumber(s: string): bigint | null {
   if (!/^\d+$/.test(s.trim())) return null;
@@ -39,7 +42,7 @@ export const backfillCommand = new Command("backfill")
     // Simple exponential backoff for fetching
     const fetchWithRetry = async (blockNum: bigint, retries = MAX_RETRIES): Promise<BlockIngestData> => {
       try {
-        return await fetchBlockData(blockNum);
+        return await chain.fetchBlockData(blockNum);
       } catch (err) {
         if (retries === 0) throw err;
 
@@ -81,7 +84,7 @@ export const backfillCommand = new Command("backfill")
           console.log(
             `Committing ${transactions.length} transactions, ${logs.length} logs and ${blocks.length} blocks for blocks ${currentBlock}-${batchEnd}...`,
           );
-          await bulkInsert({ transactions, logs, blocks });
+          await db.bulkInsert({ transactions, logs, blocks });
         } else {
           console.log(`No transactions or logs found in blocks ${currentBlock}-${batchEnd}.`);
         }
