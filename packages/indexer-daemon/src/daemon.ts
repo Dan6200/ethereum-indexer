@@ -8,6 +8,7 @@ async function sleep(ms: number) {
 }
 
 export async function ingest(db: IndexerDb, block: BlockIngestData): Promise<void> {
+  console.log(`Processing block ${block.blockNumber}...`);
   const record = {
     blockNumber: block.blockNumber,
     blockHash: block.blockHash,
@@ -15,8 +16,12 @@ export async function ingest(db: IndexerDb, block: BlockIngestData): Promise<voi
   };
   if (block.transactions.length > 0 || block.logs.length > 0) {
     await db.insertRows({ transactions: block.transactions, logs: block.logs, blocks: [record] });
+    console.log(
+      `[SUCCESS] Indexed block ${block.blockNumber} (${block.transactions.length} txs, ${block.logs.length} logs)`,
+    );
   } else {
     await db.saveBlock(record);
+    console.log(`[SUCCESS] Indexed block ${block.blockNumber} (0 txs) - Checkpoint Advanced`);
   }
 }
 
