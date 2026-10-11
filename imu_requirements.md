@@ -41,7 +41,7 @@ The IMU must facilitate backfilling, often required when a new contract is added
 
 The IMU must be completely independent of the Indexer Daemon's main execution loop.
 
-- **NFR1.1 Separate Entry Point:** Must be a separate Node.js application (CLI) with its own process and lifecycle.
+- **NFR1.1 Separate Entry Point:** Must be a separate Node.js/Bun.js application (CLI) with its own process and lifecycle.
 - **NFR1.2 Shared DB Layer:** The IMU will share the connection pool (pg or similar) and data schemas with the Indexer Daemon but must not share any in-memory state.
 
 ### **NFR2: Performance and Scalability**
