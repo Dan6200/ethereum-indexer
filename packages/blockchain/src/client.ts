@@ -2,6 +2,9 @@ import { createPublicClient, http, fallback, PublicClient, Chain } from "viem";
 import { mainnet } from "viem/chains";
 import { ValidatedTransaction, ValidatedLog } from "@app/schemas";
 
+const debug = process.env.DEBUG_RPC === "1";
+const stripSensitiveEndpoints = (url: string) => url.replace(/(?<=.*)\/[^.]+$/, "");
+
 export interface BlockIngestData {
   blockNumber: bigint;
   blockHash: string;
@@ -67,6 +70,8 @@ class ReliableProviderManager {
         if (height > maxHeight) maxHeight = height;
       } catch (e) {
         // If we can't even connect or get block number, it's unhealthy
+        if (debug)
+          console.debug(`[DEBUG] [Reliability Layer] Provider ${stripSensitiveEndpoints(p.url)} is unavailable.`);
         this.unhealthyProviders.add(p.url);
       }
     }
@@ -76,6 +81,8 @@ class ReliableProviderManager {
     for (const p of this.providers) {
       // If it already failed connection (in loop above), skip logic, it's already in unhealthy set
       if (!this.blockHeights.has(p.url)) {
+        if (debug)
+          console.debug(`[DEBUG] [Reliability Layer] Provider ${stripSensitiveEndpoints(p.url)} is unavailable.`);
         this.unhealthyProviders.add(p.url);
         continue;
       }
@@ -93,7 +100,7 @@ class ReliableProviderManager {
       } else {
         // If it was unhealthy but now caught up, recover it
         if (this.unhealthyProviders.has(p.url)) {
-          console.log(`[Reliability Layer] Provider ${p.url} recovered.`);
+          if (debug) console.log(`[DEBUG] [Reliability Layer] Provider ${stripSensitiveEndpoints(p.url)} recovered.`);
           this.unhealthyProviders.delete(p.url);
         }
       }
