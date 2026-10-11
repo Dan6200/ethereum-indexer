@@ -71,12 +71,17 @@ export const backfillCommand = new Command("backfill")
         const results = await Promise.all(promises);
         const transactions = results.flatMap((r) => r.transactions);
         const logs = results.flatMap((r) => r.logs);
+        const blocks = results.map((r) => ({
+          blockNumber: r.blockNumber,
+          blockHash: r.blockHash,
+          parentHash: r.parentHash,
+        }));
 
-        if (transactions.length > 0 || logs.length > 0) {
+        if (transactions.length > 0 || logs.length > 0 || blocks.length > 0) {
           console.log(
-            `Committing ${transactions.length} transactions and ${logs.length} logs for blocks ${currentBlock}-${batchEnd}...`,
+            `Committing ${transactions.length} transactions, ${logs.length} logs and ${blocks.length} blocks for blocks ${currentBlock}-${batchEnd}...`,
           );
-          await bulkInsert({ transactions, logs });
+          await bulkInsert({ transactions, logs, blocks });
         } else {
           console.log(`No transactions or logs found in blocks ${currentBlock}-${batchEnd}.`);
         }

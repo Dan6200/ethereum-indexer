@@ -1,3 +1,11 @@
+-- Block ancestry table: one row per processed block, used for reorg walk-back.
+CREATE TABLE IF NOT EXISTS blocks (
+    block_number NUMERIC NOT NULL PRIMARY KEY,
+    block_hash   VARCHAR(66) NOT NULL,
+    parent_hash  VARCHAR(66) NOT NULL,
+    created_at   TIMESTAMP DEFAULT NOW()
+);
+
 -- Checkpoint Table: The source of truth for the indexer's state
 CREATE TABLE IF NOT EXISTS checkpoints (
     id VARCHAR(64) PRIMARY KEY, -- usually 'chain_head'

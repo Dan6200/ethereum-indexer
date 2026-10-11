@@ -3,6 +3,9 @@ import { mainnet } from "viem/chains";
 import { ValidatedTransaction, ValidatedLog } from "@app/schemas";
 
 export interface BlockIngestData {
+  blockNumber: bigint;
+  blockHash: string;
+  parentHash: string;
   transactions: ValidatedTransaction[];
   logs: ValidatedLog[];
 }
@@ -204,7 +207,13 @@ export async function fetchBlockData(blockNumber: bigint): Promise<BlockIngestDa
       }
     }
 
-    return { transactions: validatedTxs, logs: validatedLogs };
+    return {
+      blockNumber: block.number,
+      blockHash: block.hash!,
+      parentHash: block.parentHash,
+      transactions: validatedTxs,
+      logs: validatedLogs,
+    };
   } catch (error) {
     console.error(`Error fetching block ${blockNumber}:`, error);
     throw error;

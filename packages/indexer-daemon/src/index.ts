@@ -1,6 +1,6 @@
 import "./load-env";
 import { getClient, fetchBlockHeader, fetchBlockData } from "@app/blockchain";
-import { getHeadBlock, rollbackState, insertRows, saveCheckpoint, getPool } from "@app/db-core";
+import { getHeadBlock, rollbackState, insertRows, saveBlock } from "@app/db-core";
 
 const POLLING_INTERVAL_MS = 2000;
 
@@ -26,16 +26,12 @@ async function main() {
       // If DB is empty, start at current chain head (simplified)
       if (!dbHead) {
         console.log(`[INFO] Database is empty. Initializing at chain head: ${onChainBlockNumber}`);
-        const { transactions, logs } = await fetchBlockData(onChainBlockNumber);
+        const { transactions, logs, blockNumber, blockHash, parentHash } = await fetchBlockData(onChainBlockNumber);
 
         if (transactions.length > 0 || logs.length > 0) {
-          await insertRows({ transactions, logs });
+          await insertRows({ transactions, logs, blocks: [{ blockNumber, blockHash, parentHash }] });
         } else {
-          // We need to fetch the block header to get the hash for the checkpoint
-          const header = await fetchBlockHeader(onChainBlockNumber);
-          if (header && header.hash) {
-            await saveCheckpoint(getPool(), onChainBlockNumber, header.hash);
-          }
+          await saveBlock({ blockNumber, blockHash, parentHash });
         }
 
         await sleep(POLLING_INTERVAL_MS);
@@ -68,17 +64,15 @@ async function main() {
 
       // 5. Lineage Verified - Process the Block
       console.log(`Processing block ${targetBlockNum}...`);
-      const { transactions, logs } = await fetchBlockData(targetBlockNum);
+      const { transactions, logs, blockNumber, blockHash, parentHash } = await fetchBlockData(targetBlockNum);
 
       if (transactions.length > 0 || logs.length > 0) {
-        await insertRows({ transactions, logs });
+        await insertRows({ transactions, logs, blocks: [{ blockNumber, blockHash, parentHash }] });
         console.log(`[SUCCESS] Indexed block ${targetBlockNum} (${transactions.length} txs, ${logs.length} logs)`);
       } else {
-        // Handle Empty Block: Must explicitly advance checkpoint
-        if (targetBlockHeader && targetBlockHeader.hash) {
-          await saveCheckpoint(getPool(), targetBlockNum, targetBlockHeader.hash);
-          console.log(`[SUCCESS] Indexed block ${targetBlockNum} (0 txs) - Checkpoint Advanced`);
-        }
+        // Handle Empty Block: record ancestry and advance checkpoint
+        await saveBlock({ blockNumber, blockHash, parentHash });
+        console.log(`[SUCCESS] Indexed block ${targetBlockNum} (0 txs) - Checkpoint Advanced`);
       }
     } catch (error) {
       console.error("[ERROR] Error in indexing loop:", error);

@@ -57,9 +57,28 @@ export async function rollbackState(newHeadBlockNumber: bigint, newHeadHash: str
   }
 }
 
+interface BlockRecord {
+  blockNumber: bigint;
+  blockHash: string;
+  parentHash: string;
+}
+
 interface IngestData {
   transactions: ValidatedTransaction[];
   logs: ValidatedLog[];
+  blocks: BlockRecord[];
+}
+
+async function saveBlocks(client: PoolClient, blocks: BlockRecord[]): Promise<void> {
+  const queryBlock = `
+    INSERT INTO blocks (block_number, block_hash, parent_hash)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (block_number) DO NOTHING
+  `;
+
+  for (const block of blocks) {
+    await client.query(queryBlock, [block.blockNumber.toString(), block.blockHash, block.parentHash]);
+  }
 }
 
 /**
@@ -76,6 +95,10 @@ export async function insertRows(data: IngestData): Promise<void> {
     if (maxBlock) {
       await ensurePartition(client, "transactions", maxBlock.blockNumber);
       await ensurePartition(client, "logs", maxBlock.blockNumber);
+    }
+
+    if (data.blocks.length > 0) {
+      await saveBlocks(client, data.blocks);
     }
 
     // 1. Insert Transactions
@@ -152,6 +175,10 @@ export async function bulkInsert(data: IngestData): Promise<void> {
     if (maxBlock) {
       await ensurePartition(client, "transactions", maxBlock.blockNumber);
       await ensurePartition(client, "logs", maxBlock.blockNumber);
+    }
+
+    if (data.blocks.length > 0) {
+      await saveBlocks(client, data.blocks);
     }
 
     // === PROCESS TRANSACTIONS ===
@@ -247,8 +274,26 @@ export async function bulkInsert(data: IngestData): Promise<void> {
   }
 }
 
-const PARTITION_BLOCK_SIZE = 1_000_000n; // blocks per partition
+/**
+ * Persists a single (typically empty) block: writes its ancestry row and advances
+ * the checkpoint in one transaction. No partition setup is required (no tx/log writes).
+ */
+export async function saveBlock(block: BlockRecord): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await saveBlocks(client, [block]);
+    await saveCheckpoint(client, block.blockNumber, block.blockHash);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
+const PARTITION_BLOCK_SIZE = 1_000_000n; // blocks per partition
 function partitionName(tableName: string, startM: bigint): string {
   return `${tableName}_p${startM}m_${startM + 1n}m`;
 }
