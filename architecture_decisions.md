@@ -88,3 +88,21 @@ The daemon ingests blocks by polling the chain head and must remain correct when
 
 - **Pros:** Correct for reorgs of any depth; near-zero overhead in the common case, preserving liveness.
 - **Cons:** An additional `blocks` table (one write per block) and a more complex reconciliation state machine.
+
+## ADR-004: Concurrency Model — Single Writer via Advisory Lock + Idempotent Writes
+
+**Date:** 2026-10-11
+**Status:** Accepted
+
+### Context
+
+Multiple daemons can run concurrently (accidental double-start, or HA failover). Atomic transactions + idempotency alone are insufficient: they prevent duplicates and serialize identical rollbacks, but do not prevent an ingest-vs-rollback interleaving from leaving the checkpoint inconsistent with stored data. See `concurrency_model.md`.
+
+### Decision
+
+Elect a single active writer with a session-scoped PostgreSQL advisory lock (`pg_try_advisory_lock`) on a dedicated connection, while keeping the existing idempotent, transactional writes as a correctness backstop.
+
+### Consequences
+
+- **Pros:** single-writer semantics eliminate interleaving races; no duplicate work; cheap HA failover (the lock auto-releases on disconnect).
+- **Cons:** the lock guarantees exclusivity but not liveness (a hung leader holds it); there is failover latency; advisory locks are cooperative (unenforced).
