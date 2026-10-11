@@ -1,11 +1,54 @@
 import "./load-env";
-import { getClient, fetchBlockHeader, fetchBlockData } from "@app/blockchain";
-import { getHeadBlock, rollbackState, insertRows, saveBlock } from "@app/db-core";
+import { getClient, fetchBlockHeader, fetchBlockData, BlockIngestData } from "@app/blockchain";
+import { getHeadBlock, getBlock, rollbackState, insertRows, saveBlock } from "@app/db-core";
 
 const POLLING_INTERVAL_MS = 2000;
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ingest(block: BlockIngestData): Promise<void> {
+  const record = {
+    blockNumber: block.blockNumber,
+    blockHash: block.blockHash,
+    parentHash: block.parentHash,
+  };
+  if (block.transactions.length > 0 || block.logs.length > 0) {
+    await insertRows({ transactions: block.transactions, logs: block.logs, blocks: [record] });
+  } else {
+    await saveBlock(record);
+  }
+}
+
+async function reconcileFork(headNumber: bigint): Promise<void> {
+  // Fast path (liveness): assume a 1-block reorg. If our previous block is still
+  // canonical, roll back exactly one block and resume.
+  if (headNumber === 0n) {
+    throw new Error("Reorg at genesis — cannot roll back below block 0");
+  }
+  const prevNum = headNumber - 1n;
+  const prevStored = await getBlock(prevNum);
+  const prevCanonical = await fetchBlockHeader(prevNum);
+  if (prevStored && prevCanonical.hash === prevStored.hash) {
+    await rollbackState(prevNum, prevStored.hash);
+    return;
+  }
+
+  // Slow path (walk-back): find the common ancestor by comparing our stored
+  // hashes to the canonical chain, then roll back to it in one shot.
+  for (let k = headNumber; k >= 0n; k -= 1n) {
+    const stored = await getBlock(k);
+    if (!stored) {
+      throw new Error(`Missing block ancestry at ${k} — cannot safely roll back`);
+    }
+    const canonical = await fetchBlockHeader(k);
+    if (canonical.hash === stored.hash) {
+      await rollbackState(k, stored.hash);
+      return;
+    }
+  }
+  throw new Error("No common ancestor found on the canonical chain");
 }
 
 async function main() {
@@ -18,65 +61,35 @@ async function main() {
 
   while (true) {
     try {
-      // 1. Get Current State
+      // Independent observations: external truth vs our mirrored cursor.
+      const chainHead = await client.getBlockNumber();
       const dbHead = await getHeadBlock();
-      const onChainBlockNumber = await client.getBlockNumber();
-      const targetBlockNum = dbHead ? dbHead.number + 1n : onChainBlockNumber;
 
-      // If DB is empty, start at current chain head (simplified)
-      if (!dbHead) {
-        console.log(`[INFO] Database is empty. Initializing at chain head: ${onChainBlockNumber}`);
-        const { transactions, logs, blockNumber, blockHash, parentHash } = await fetchBlockData(onChainBlockNumber);
-
-        if (transactions.length > 0 || logs.length > 0) {
-          await insertRows({ transactions, logs, blocks: [{ blockNumber, blockHash, parentHash }] });
-        } else {
-          await saveBlock({ blockNumber, blockHash, parentHash });
-        }
-
+      if (dbHead === null) {
+        // Empty mirror: seed from the chain (the one place the chain directly seeds the DB).
+        await ingest(await fetchBlockData(chainHead));
         await sleep(POLLING_INTERVAL_MS);
         continue;
       }
 
-      // 2. Check if we are behind
-      if (targetBlockNum > onChainBlockNumber) {
-        // Synced. Wait.
+      // The next block to mirror is the canonical chain's block at dbHead.number + 1.
+      const nextHeight = dbHead.number + 1n;
+      if (nextHeight > chainHead) {
         await sleep(POLLING_INTERVAL_MS);
         continue;
       }
 
-      // 3. Fetch Target Block Header for Re-org Check
-      const targetBlockHeader = await fetchBlockHeader(targetBlockNum);
-
-      // 4. Re-org Detection
-      if (targetBlockHeader.parentHash !== dbHead.hash) {
-        console.warn(`[WARN] RE-ORG DETECTED!`);
-        console.warn(
-          `Target Block ${targetBlockNum} parent (${targetBlockHeader.parentHash}) !== DB Head (${dbHead.hash})`,
-        );
-        const newHeadNum = dbHead.number - 1n;
-        console.warn(`Initiating rollback to block ${newHeadNum}...`);
-
-        const newHeadHeader = await fetchBlockHeader(newHeadNum);
-        await rollbackState(newHeadNum, newHeadHeader.hash!);
+      // Only mirror it after the chain confirms lineage (its parent == our mirrored head).
+      const nextHeader = await fetchBlockHeader(nextHeight);
+      if (nextHeader.parentHash !== dbHead.hash) {
+        await reconcileFork(dbHead.number);
         continue;
       }
 
-      // 5. Lineage Verified - Process the Block
-      console.log(`Processing block ${targetBlockNum}...`);
-      const { transactions, logs, blockNumber, blockHash, parentHash } = await fetchBlockData(targetBlockNum);
-
-      if (transactions.length > 0 || logs.length > 0) {
-        await insertRows({ transactions, logs, blocks: [{ blockNumber, blockHash, parentHash }] });
-        console.log(`[SUCCESS] Indexed block ${targetBlockNum} (${transactions.length} txs, ${logs.length} logs)`);
-      } else {
-        // Handle Empty Block: record ancestry and advance checkpoint
-        await saveBlock({ blockNumber, blockHash, parentHash });
-        console.log(`[SUCCESS] Indexed block ${targetBlockNum} (0 txs) - Checkpoint Advanced`);
-      }
+      await ingest(await fetchBlockData(nextHeight));
     } catch (error) {
       console.error("[ERROR] Error in indexing loop:", error);
-      await sleep(5000); // Backoff on error
+      await sleep(5000);
     }
   }
 }

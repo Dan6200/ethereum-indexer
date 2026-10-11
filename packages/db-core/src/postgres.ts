@@ -42,6 +42,7 @@ export async function rollbackState(newHeadBlockNumber: bigint, newHeadHash: str
     // 1. Delete transactions and logs strictly after the new head
     await client.query(`DELETE FROM transactions WHERE block_number > $1`, [newHeadBlockNumber.toString()]);
     await client.query(`DELETE FROM logs WHERE block_number > $1`, [newHeadBlockNumber.toString()]);
+    await client.query(`DELETE FROM blocks WHERE block_number > $1`, [newHeadBlockNumber.toString()]);
 
     // 2. Set the checkpoint to the new head (number and hash)
     await saveCheckpoint(client, newHeadBlockNumber, newHeadHash);
@@ -344,4 +345,12 @@ export async function getHeadBlock(): Promise<{
     number: BigInt(res.rows[0].block_number),
     hash: res.rows[0].block_hash,
   };
+}
+
+export async function getBlock(blockNumber: bigint): Promise<{ number: bigint; hash: string } | null> {
+  const res = await pool.query(`SELECT block_number, block_hash FROM blocks WHERE block_number = $1`, [
+    blockNumber.toString(),
+  ]);
+  if (res.rows.length === 0) return null;
+  return { number: BigInt(res.rows[0].block_number), hash: res.rows[0].block_hash };
 }
