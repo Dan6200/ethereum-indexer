@@ -32,6 +32,8 @@ Every write is transactional and idempotent:
 - Duplicate work: each block fetched/inserted N times.
 - Steady-state ingestion is safe (idempotent + monotonic); it is reorgs that break it.
 
+See ADR-005 for the considered-and-rejected alternative of enforcing this with foreign keys (rejected for hot-path performance cost).
+
 ## Approach 2 — Singleton lock
 
 A session-scoped PostgreSQL advisory lock (`pg_try_advisory_lock`) on a dedicated connection elects one active writer.

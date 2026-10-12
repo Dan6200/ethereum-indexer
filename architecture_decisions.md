@@ -106,3 +106,44 @@ Elect a single active writer with a session-scoped PostgreSQL advisory lock (`pg
 
 - **Pros:** single-writer semantics eliminate interleaving races; no duplicate work; cheap HA failover (the lock auto-releases on disconnect).
 - **Cons:** the lock guarantees exclusivity but not liveness (a hung leader holds it); there is failover latency; advisory locks are cooperative (unenforced).
+
+---
+
+## ADR-005: Rejected — Foreign keys on the ingestion tables
+
+**Date:** 2026-10-12
+**Status:** Rejected
+
+### Context
+
+The ingestion tables enforce their referential relationships only by convention. `blocks.parent_hash` is a plain `VARCHAR(66)`, and `transactions.block_number` / `logs.block_number` are plain `NUMERIC`; there are no foreign keys anywhere in the schema. Under multiple concurrent writers, the ingest-vs-rollback race can therefore leave orphaned rows — a block whose parent no longer exists, or a transaction/log whose block row was rolled back.
+
+### Proposed approach
+
+Add database-enforced referential integrity:
+
+- A self-referential FK on `blocks` so a block cannot exist without its parent: either `parent_hash REFERENCES blocks(block_hash)` (requires a `UNIQUE` index on `block_hash`) or a new `parent_block_number REFERENCES blocks(block_number)`.
+- Child FKs: `transactions.block_number REFERENCES blocks(block_number)` and `logs.block_number REFERENCES blocks(block_number)`.
+
+This would make orphaned rows impossible at the database level, converting the silent ingest-vs-rollback corruption into a loud constraint violation that the daemon's loop catches and self-corrects.
+
+### Why it was considered
+
+- A hard referential-integrity guarantee (zero orphans) independent of application logic.
+- Defense-in-depth alongside the single-writer advisory lock (ADR-004).
+- Turns silent corruption into a detectable, retryable error.
+- The `transactions/logs → blocks` direction needs no deferred checking, since `rollbackState` already deletes children (transactions, logs) before parents (blocks).
+
+### Why it was rejected
+
+- **Performance cost on the ingestion hot path** — the deciding factor. Every `INSERT`/`DELETE` would pay a foreign-key lookup. The indexer writes millions of rows through COPY/staging, so the added per-row constraint checks are a throughput tax on the primary workload, for a benefit that only materializes in the already-narrow concurrent-writer race.
+- **The self-referential FK adds complexity** — it must be `DEFERRABLE INITIALLY DEFERRED`, otherwise the single-statement `DELETE FROM blocks WHERE block_number > N` in `rollbackState` can spuriously fail due to delete ordering; and it needs either a `UNIQUE` index on `block_hash` or an extra `parent_block_number` column.
+- **It does not fix the checkpoint** (`checkpoints.block_number` can disagree with `max(blocks.block_number)` even with zero orphans) and does not prevent duplicate work.
+
+### Decision
+
+Do not add foreign keys to the ingestion tables. Instead:
+
+1. Rely on the single-writer advisory lock (ADR-004) to eliminate the concurrent-writer race that produces orphans.
+2. Rely on application-level gap detection (`reconcileFork`'s `Missing block ancestry` check) to catch a broken lineage.
+3. If stronger assurance is ever required, prefer a periodic offline integrity check (e.g. a `NOT EXISTS` query over `blocks` / `transactions` / `logs`) over a hot-path foreign-key constraint.
