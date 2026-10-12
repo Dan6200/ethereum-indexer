@@ -32,7 +32,7 @@ Every write is transactional and idempotent:
 - Duplicate work: each block fetched/inserted N times.
 - Steady-state ingestion is safe (idempotent + monotonic); it is reorgs that break it.
 
-See ADR-005 for the considered-and-rejected alternative of enforcing this with foreign keys (rejected for hot-path performance cost).
+See ADR-005: the self-referential FK on blocks is rejected for complexity (deferred checking + unique index/parent column), and child FKs (transactions/logs → blocks) carry a hidden cost — they force B-tree indexes on block_number across every partition.
 
 ## Approach 2 — Singleton lock
 
