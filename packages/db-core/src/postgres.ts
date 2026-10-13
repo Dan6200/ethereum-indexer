@@ -49,6 +49,11 @@ function getMaxBlock(
 }
 
 export class IndexerDb {
+  // Arbitrary fixed key identifying "the custom-eth-indexer singleton writer".
+  // Advisory locks are per-database, so two daemons on the same DB contend,
+  // while a test DB is unaffected.
+  private static readonly SINGLETON_LOCK_KEY = 727479857;
+
   private pool: Pool;
 
   constructor(pool: Pool) {
@@ -57,6 +62,32 @@ export class IndexerDb {
 
   getPool(): Pool {
     return this.pool;
+  }
+
+  async acquireSingletonLock(): Promise<{ release: () => Promise<void> }> {
+    // Use a dedicated connection (NOT the pool's shared client) so the lock
+    // stays held for the daemon's lifetime and is auto-released on disconnect.
+    const client = await this.pool.connect();
+    try {
+      const res = await client.query("SELECT pg_try_advisory_lock($1) AS locked", [IndexerDb.SINGLETON_LOCK_KEY]);
+      if (res.rows[0].locked !== true) {
+        throw new Error("Another indexer daemon already holds the singleton advisory lock.");
+      }
+    } catch (err) {
+      client.release();
+      throw err;
+    }
+    return {
+      release: async () => {
+        try {
+          await client.query("SELECT pg_advisory_unlock($1)", [IndexerDb.SINGLETON_LOCK_KEY]);
+        } catch {
+          // The lock is released automatically when the connection closes.
+        } finally {
+          client.release();
+        }
+      },
+    };
   }
 
   /**
