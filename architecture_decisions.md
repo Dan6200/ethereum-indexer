@@ -131,3 +131,5 @@ A common assumption is that `transactions.block_number → blocks.block_number` 
 ### Decision
 
 Do not add a self-referential FK on `blocks`. Treat child FKs as a separate, not-yet-adopted option whose real cost is the forced B-tree indexes, not the FK probe. Rely on the single-writer advisory lock (ADR-004) plus application-level gap detection (`reconcileFork`'s `Missing block ancestry` check).
+
+See `referential_integrity.md` for the full analysis of both the self-referential FK and the child FKs (transactions/logs → blocks).
