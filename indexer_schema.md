@@ -4,7 +4,7 @@ This schema outlines the minimum required tables and columns for a production-gr
 
 ## **1\. The Checkpoint Table (State Management)**
 
-This table is **critical** for reliability. It acts as the "source of truth" for where your indexer last successfully committed data. This is how your indexer detects and recovers from a re-org.
+This table is **critical** for reliability. It acts as the "source of truth" for where the indexer last successfully committed data. This is how the indexer detects and recovers from a re-org.
 
 | Column       | Type        | Purpose                                                                                                                    |
 | :----------- | :---------- | :------------------------------------------------------------------------------------------------------------------------- |
@@ -15,7 +15,7 @@ This table is **critical** for reliability. It acts as the "source of truth" for
 
 ## **2\. Core Data Table (e.g., Transactions)**
 
-This table stores your custom application data (matching your TransactionSchema from the IMU blueprint). **Every single row must contain the block metadata.**
+This table stores the custom application data (matching the TransactionSchema from the IMU blueprint). **Every single row must contain the block metadata.**
 
 | Column       | Type               | Purpose                                                                                                                               |
 | :----------- | :----------------- | :------------------------------------------------------------------------------------------------------------------------------------ |
@@ -24,13 +24,13 @@ This table stores your custom application data (matching your TransactionSchema 
 | from_address | VARCHAR(42)        | Indexed address (0x...).                                                                                                              |
 | to_address   | VARCHAR(42)        | Indexed address (0x...).                                                                                                              |
 | amount       | NUMERIC            | **CRUCIAL: Use NUMERIC for financial values.** JavaScript's number and SQL's FLOAT lose precision. NUMERIC preserves the exact value. |
-| block_number | NUMERIC            | **MANDATORY for Rollback.** Used in your rollbackState function to target data to delete during a re-org.                             |
+| block_number | NUMERIC            | **MANDATORY for Rollback.** Used in the rollbackState function to target data to delete during a re-org.                              |
 | block_hash   | VARCHAR(66)        | Contextual link to the block.                                                                                                         |
 | log_index    | NUMERIC            | Position of the event within the block (useful for ordering).                                                                         |
 
 ## **3\. Indexes (Performance)**
 
-To make your rollbackState function run instantly, and to make your app fast, you need indexes.
+To make the rollbackState function run instantly, and to make the app fast, we need indexes.
 
 | Index Name       | Columns                      | Purpose                                                                                                                                      |
 | :--------------- | :--------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------- |
