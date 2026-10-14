@@ -64,6 +64,21 @@ A session-scoped PostgreSQL advisory lock (`pg_try_advisory_lock`) on a dedicate
 
 `UPDATE … WHERE block_number = <expected>`, retry on mismatch. Correct without a lock, but subtle (the data writes are not naturally tied to the winning CAS branch), still does duplicate work, and is more code. Not worth it for a single-writer indexer.
 
+## Approach 4 — Optimistic concurrency via Serializable Snapshot Isolation (future consideration)
+
+PostgreSQL's `SERIALIZABLE` isolation level is Serializable Snapshot Isolation (SSI): Snapshot Isolation plus detection of write-skew-class anomalies. It does not block or deadlock. Instead it records read-write dependencies (via `SIREAD` locks) and, at commit, aborts a transaction when those dependencies form a cycle that no serial order can explain — raising SQLSTATE `40001` (`could not serialize access due to concurrent update`), which the application must retry.
+
+Relevance to the indexer: the ingest-vs-rollback race is exactly such an anomaly. An ingest transaction reads `head = N` and writes block `N+2`; a rollback reads `head = N` and deletes everything `> N`. The combined state (block `N+2` present while `checkpoint = N`) cannot be produced by any serial order, so SSI would abort one transaction and force a retry — giving correctness under concurrent writers with no single-writer lock.
+
+Why this is a future option rather than the current choice:
+
+1. **SSI only protects what happens inside the serializable transaction.** The daemon's read-compute-write cycle currently reads the head _outside_ the ingest/rollback transaction, so the dependency is invisible to the detector. It would require moving the guard read (`SELECT … FROM checkpoints WHERE id = 'chain_head'`) into `BEGIN ISOLATION LEVEL SERIALIZABLE`.
+2. **It requires retry logic** around every ingest and rollback to handle `40001`.
+3. **It churns under same-head contention.** Two writers racing the same cursor take `SIREAD` locks on the checkpoint and write it, so one aborts even though the writes are idempotent — repeated abort/retry. SSI pays off for _disjoint_ work (parallel backfills over disjoint ranges, per-chain writers on separate cursors), not for racing a single head.
+4. **Idempotency is still required**, since aborts cause the transaction to re-run.
+
+Decision (unchanged): retain the session-scoped advisory lock (ADR-004) as the concurrency layer. Revisit SERIALIZABLE when work is sharded across disjoint cursors (e.g. parallel backfills or multi-chain writers), where optimistic concurrency outperforms a global lock.
+
 ## Decision
 
 Use a session-scoped `pg_try_advisory_lock` on a dedicated connection at startup, combined with the existing idempotent transactions. The residual "hung-but-alive leader" drawback is mitigated by per-block progress logging.
